@@ -5,16 +5,6 @@ Vercel Serverless Function (Python).
 
 import json
 
-import litellm
-
-
-SYSTEM_PROMPT = (
-    "You are OmniCode, an expert coding assistant. "
-    "You help users write, debug, explain, and refactor code. "
-    "Always format code with proper markdown code blocks including "
-    "the language identifier. Be concise but thorough."
-)
-
 
 def handler(request):
     """Vercel serverless function handler."""
@@ -42,6 +32,16 @@ def handler(request):
             "body": json.dumps({"error": "Messages are required"}),
         }
 
+    # Lazy import litellm so Vercel can parse this file at build time
+    import litellm
+
+    SYSTEM_PROMPT = (
+        "You are OmniCode, an expert coding assistant. "
+        "You help users write, debug, explain, and refactor code. "
+        "Always format code with proper markdown code blocks including "
+        "the language identifier. Be concise but thorough."
+    )
+
     # Prepend system message
     if messages[0].get("role") != "system":
         messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
@@ -57,8 +57,6 @@ def handler(request):
         kwargs["api_base"] = api_base
 
     try:
-        # Non-streaming call (Vercel Python doesn't support SSE well)
-        # We collect the full response and return it
         response = litellm.completion(stream=False, **kwargs)
         content = response.choices[0].message.content or ""
 
