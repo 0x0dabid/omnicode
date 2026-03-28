@@ -1,6 +1,6 @@
 /**
  * OmniCode — Frontend Application
- * + Google Auth Wall (must sign in to access)
+ * + GitHub OAuth Auth Wall (must sign in to access)
  * + Usage Monitor (5-hour rolling + weekly)
  * + Real streaming (SSE)
  * + Image paste/upload support (multimodal)
@@ -65,14 +65,10 @@ const userMenu         = $('#userMenu');
 const userAvatarBtn    = $('#userAvatarBtn');
 const userAvatar       = $('#userAvatar');
 const userName         = $('#userName');
-const userEmail        = $('#userEmail');
+const userLogin        = $('#userLogin');
 const userDropdown     = $('#userDropdown');
 const logoutBtn        = $('#logoutBtn');
 const authError        = $('#authError');
-const authSetupBtn     = $('#authSetupBtn');
-const authSetupPanel   = $('#authSetupPanel');
-const authClientIdInput= $('#authClientIdInput');
-const authSetupSaveBtn = $('#authSetupSaveBtn');
 // Usage
 const usageBtn         = $('#usageBtn');
 const usageModal       = $('#usageModal');
@@ -82,121 +78,69 @@ const usageClearBtn    = $('#usageClearBtn');
 // ── Initialize ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   loadTheme();
-  setupAuth();
   setupListeners();
-
-  // Check if already logged in
-  const user = JSON.parse(localStorage.getItem('omnicode_user') || 'null');
-  if (user) {
-    currentUser = user;
-    showApp(user);
-  }
+  setupAuth();
+  chatInput.focus();
 });
 
 // ════════════════════════════════════════════════════════════════════════
-// ── AUTH ──────────────────────────────────────────────────────────────
+// ── GITHUB AUTH ───────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════
 
 function setupAuth() {
-  loginBtn.addEventListener('click', triggerGoogleSignIn);
-  logoutBtn.addEventListener('click', doLogout);
-  authSetupBtn.addEventListener('click', () => authSetupPanel.classList.toggle('hidden'));
-
-  authSetupSaveBtn.addEventListener('click', () => {
-    const cid = authClientIdInput.value.trim();
-    if (!cid) { alert('Please enter a Client ID'); return; }
-    localStorage.setItem('omnicode_google_client_id', cid);
-    authSetupPanel.classList.add('hidden');
-    authError.classList.add('hidden');
-    flashAuthStatus('Client ID saved! Click Sign in now.');
-  });
-
-  userAvatarBtn.addEventListener('click', () => userDropdown.classList.toggle('hidden'));
-  document.addEventListener('click', (e) => {
-    if (!userMenu.contains(e.target)) userDropdown.classList.add('hidden');
-  });
-
-  // Pre-fill client id
-  authClientIdInput.value = localStorage.getItem('omnicode_google_client_id') || '';
-}
-
-function triggerGoogleSignIn() {
-  const clientId = localStorage.getItem('omnicode_google_client_id');
-  if (!clientId) {
-    authSetupPanel.classList.remove('hidden');
-    flashAuthStatus('Set your Google Client ID first.');
-    return;
-  }
-  if (typeof google === 'undefined' || !google.accounts) {
-    flashAuthStatus('Google Sign-In is still loading. Try again in 2 seconds.');
-    return;
-  }
-  try {
-    google.accounts.id.initialize({
-      client_id: clientId,
-      callback: handleGoogleSignIn,
-    });
-    // Show the One Tap prompt
-    google.accounts.id.prompt((notification) => {
-      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        // Use popup as fallback
-        const tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
-          scope: 'openid profile email',
-          callback: handleGoogleSignIn,
-        });
-        tokenClient.requestAccessToken();
-      }
-    });
-  } catch (e) {
-    flashAuthStatus('Error: ' + e.message);
-  }
-}
-
-// Global callback for Google Sign-In
-function handleGoogleSignIn(response) {
-  try {
-    let payload;
-    if (response.credential) {
-      // One Tap / credential response
-      payload = JSON.parse(atob(response.credential.split('.')[1]));
-    } else if (response.access_token) {
-      // OAuth2 token response — fetch user info
-      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: 'Bearer ' + response.access_token }
-      }).then(r => r.json()).then(info => {
-        const user = { name: info.name, email: info.email, picture: info.picture };
-        loginSuccess(user);
-      }).catch(e => flashAuthStatus('Failed to get user info: ' + e.message));
+  // 1. Check URL for OAuth callback (?auth=base64data)
+  const params = new URLSearchParams(window.location.search);
+  const authParam = params.get('auth');
+  if (authParam) {
+    try {
+      const json = atob(authParam.replace(/-/g, '+').replace(/_/g, '/'));
+      const user = JSON.parse(json);
+      currentUser = user;
+      localStorage.setItem('omnicode_user', JSON.stringify(user));
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      showApp(user);
       return;
-    } else {
-      flashAuthStatus('Unknown sign-in response');
-      return;
+    } catch (e) {
+      flashAuthStatus('Login failed. Try again.');
     }
-    const user = {
-      name: payload.name || payload.given_name || 'User',
-      email: payload.email,
-      picture: payload.picture,
-    };
-    loginSuccess(user);
-  } catch (e) {
-    flashAuthStatus('Login failed: ' + e.message);
+  }
+
+  // 2. Check saved session
+  const saved = JSON.parse(localStorage.getItem('omnicode_user') || 'null');
+  if (saved) {
+    currentUser = saved;
+    showApp(saved);
   }
 }
-// Expose globally for Google callback
-window.handleGoogleSignIn = handleGoogleSignIn;
 
-function loginSuccess(user) {
-  currentUser = user;
-  localStorage.setItem('omnicode_user', JSON.stringify(user));
-  showApp(user);
+function triggerGitHubLogin() {
+  // Redirect to GitHub OAuth authorize URL
+  // The client_id is fetched from our own API to keep it server-side
+  fetch('/api/auth/github/client')
+    .then(r => r.json())
+    .then(data => {
+      if (data.client_id) {
+        const redirectUri = `${window.location.origin}/api/auth/github`;
+        const url = `https://github.com/login/oauth/authorize?client_id=${data.client_id}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=read:user%20user:email`;
+        window.location.href = url;
+      } else {
+        flashAuthStatus(data.error || 'GitHub OAuth not configured. Set GITHUB_CLIENT_ID env var on Vercel.');
+      }
+    })
+    .catch(() => {
+      // Fallback: try direct redirect
+      const redirectUri = `${window.location.origin}/api/auth/github`;
+      const url = `https://github.com/login/oauth/authorize?client_id=&redirect_uri=${encodeURIComponent(redirectUri)}&scope=read:user%20user:email`;
+      flashAuthStatus('Could not reach auth endpoint. Check your deployment.');
+    });
 }
 
 function showApp(user) {
   authWall.classList.add('hidden');
-  userAvatar.src = user.picture;
+  userAvatar.src = user.avatar;
   userName.textContent = user.name;
-  userEmail.textContent = user.email;
+  userLogin.textContent = '@' + user.login;
 
   // Load app stuff once
   loadSettings();
@@ -209,15 +153,12 @@ function doLogout() {
   localStorage.removeItem('omnicode_user');
   userDropdown.classList.add('hidden');
   authWall.classList.remove('hidden');
-  if (typeof google !== 'undefined' && google.accounts) {
-    google.accounts.id.disableAutoSelect();
-  }
 }
 
 function flashAuthStatus(msg) {
   authError.textContent = msg;
   authError.classList.remove('hidden');
-  setTimeout(() => authError.classList.add('hidden'), 4000);
+  setTimeout(() => authError.classList.add('hidden'), 5000);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -252,7 +193,6 @@ function recordUsage(model, inputTokens, outputTokens, elapsedMs) {
 
 function estimateTokens(text) {
   if (!text) return 0;
-  // Rough: 1 token ~ 4 chars
   return Math.ceil(text.length / 4);
 }
 
@@ -260,24 +200,22 @@ function renderUsage() {
   const log = getUsageLog();
   const now = Date.now();
   const fiveHours = 5 * 60 * 60 * 1000;
-  const oneWeek = 7 * 24 * 60 * 60 * 1000;
 
-  // ── Totals ──
+  // Totals
   const totalReq = log.length;
   const totalTokens = log.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-  const totalCost = (totalTokens / 1_000_000 * 0.15).toFixed(2); // rough estimate
+  const totalCost = (totalTokens / 1_000_000 * 0.15).toFixed(2);
   $('#usageTotalReq').textContent = totalReq.toLocaleString();
   $('#usageTotalTokens').textContent = totalTokens.toLocaleString();
   $('#usageTotalCost').textContent = '$' + totalCost;
 
-  // ── 5-Hour Window ──
+  // 5-Hour Window
   const fiveHourEntries = log.filter(e => (now - e.ts) < fiveHours);
   const fiveHReq = fiveHourEntries.length;
   const fiveHTokens = fiveHourEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
   $('#usage5hReq').textContent = fiveHReq;
   $('#usage5hTokens').textContent = fiveHTokens.toLocaleString();
 
-  // 5-hour chart: split into 5 x 1-hour buckets
   const hourBuckets = [];
   for (let i = 0; i < 5; i++) {
     const bucketStart = now - (5 - i) * 60 * 60 * 1000;
@@ -288,21 +226,20 @@ function renderUsage() {
   }
   const maxBucket = Math.max(1, ...hourBuckets.map(b => b.tokens));
   const chart5h = $('#usage5hChart');
-  const labels5h = $('#usage5hLabels');
   chart5h.innerHTML = hourBuckets.map((b, i) => {
     const pct = Math.max(2, (b.tokens / maxBucket) * 100);
-    const hoursAgo = 5 - i;
     return `<div class="flex-1 flex flex-col items-center justify-end h-full">
-      <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${formatTokenCount(b.tokens)}</span>
+      <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${fmtTok(b.tokens)}</span>
       <div class="w-full rounded-t" style="height:${pct}%;background:var(--accent);min-height:2px;opacity:${0.4 + 0.6 * (b.tokens / maxBucket)}"></div>
     </div>`;
   }).join('');
-  labels5h.innerHTML = [5,4,3,2,1,0].map(h => `<span>${h === 0 ? 'Now' : h + 'h'}</span>`).join('');
+  $('#usage5hLabels').innerHTML = [5,4,3,2,1,0].map(h => `<span>${h === 0 ? 'Now' : h + 'h'}</span>`).join('');
 
-  // ── Weekly ──
+  // Weekly
   const weekStart = new Date();
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1); // Monday
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
   weekStart.setHours(0,0,0,0);
+  const oneWeek = 7 * 24 * 60 * 60 * 1000;
   const weekEntries = log.filter(e => e.ts >= weekStart.getTime());
   const weekReq = weekEntries.length;
   const weekTokens = weekEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
@@ -311,12 +248,10 @@ function renderUsage() {
   $('#usageWeekTokens').textContent = weekTokens.toLocaleString();
   $('#usageWeekAvg').textContent = Math.round(weekReq / daysActive);
 
-  // Week range label
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 6);
-  $('#usageWeekRange').textContent = formatDate(weekStart) + ' - ' + formatDate(weekEnd);
+  $('#usageWeekRange').textContent = fmtDate(weekStart) + ' - ' + fmtDate(weekEnd);
 
-  // Weekly chart: 7 days Mon-Sun
   const dayBuckets = [];
   for (let d = 0; d < 7; d++) {
     const dayStart = new Date(weekStart);
@@ -333,12 +268,12 @@ function renderUsage() {
     const pct = Math.max(2, (b.tokens / maxDay) * 100);
     const isToday = (i === (new Date().getDay() + 6) % 7);
     return `<div class="flex-1 flex flex-col items-center justify-end h-full">
-      <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${formatTokenCount(b.tokens)}</span>
+      <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${fmtTok(b.tokens)}</span>
       <div class="w-full rounded-t" style="height:${pct}%;background:${isToday ? 'var(--accent)' : 'var(--border)'};min-height:2px;${isToday ? 'opacity:1' : 'opacity:0.6'}"></div>
     </div>`;
   }).join('');
 
-  // ── Recent Activity ──
+  // Recent Activity
   const recent = log.slice(-10).reverse();
   const recentList = $('#usageRecentList');
   if (recent.length === 0) {
@@ -357,21 +292,16 @@ function renderUsage() {
     }).join('');
   }
 
-  // Tracking start
   const trackingStart = localStorage.getItem(USAGE_START_KEY);
-  $('#usageTrackingStart').textContent = trackingStart ? formatDate(new Date(trackingStart)) : '-';
+  $('#usageTrackingStart').textContent = trackingStart ? fmtDate(new Date(trackingStart)) : '-';
 }
 
-function formatTokenCount(n) {
+function fmtTok(n) {
   if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
   if (n >= 1000) return (n/1000).toFixed(1) + 'K';
   return n.toString();
 }
-
-function formatDate(d) {
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
+function fmtDate(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 function timeAgo(ts) {
   const diff = Date.now() - ts;
   if (diff < 60000) return 'just now';
@@ -429,56 +359,32 @@ function setupImageHandling() {
   chatInput.addEventListener('drop', (e) => {
     e.preventDefault();
     const files = e.dataTransfer?.files;
-    if (files) {
-      for (const f of files) {
-        if (f.type.startsWith('image/')) addImage(f);
-      }
-    }
+    if (files) { for (const f of files) { if (f.type.startsWith('image/')) addImage(f); } }
   });
   chatInput.addEventListener('dragover', (e) => e.preventDefault());
   imageUploadBtn.addEventListener('click', () => imageFileInput.click());
   imageFileInput.addEventListener('change', () => {
-    for (const f of imageFileInput.files) {
-      if (f.type.startsWith('image/')) addImage(f);
-    }
+    for (const f of imageFileInput.files) { if (f.type.startsWith('image/')) addImage(f); }
     imageFileInput.value = '';
   });
 }
 
 function addImage(file) {
   const reader = new FileReader();
-  reader.onload = (e) => {
-    const dataUrl = e.target.result;
-    pendingImages.push({ dataUrl, file });
-    renderImagePreviews();
-  };
+  reader.onload = (e) => { pendingImages.push({ dataUrl: e.target.result, file }); renderImagePreviews(); };
   reader.readAsDataURL(file);
 }
-
-function removeImage(index) {
-  pendingImages.splice(index, 1);
-  renderImagePreviews();
-}
-
+function removeImage(index) { pendingImages.splice(index, 1); renderImagePreviews(); }
 function renderImagePreviews() {
-  if (pendingImages.length === 0) {
-    imagePreviewStrip.classList.add('hidden');
-    imagePreviewStrip.innerHTML = '';
-    return;
-  }
+  if (pendingImages.length === 0) { imagePreviewStrip.classList.add('hidden'); imagePreviewStrip.innerHTML = ''; return; }
   imagePreviewStrip.classList.remove('hidden');
   imagePreviewStrip.innerHTML = pendingImages.map((img, i) => `
     <div class="img-preview-wrap">
       <img src="${img.dataUrl}" alt="paste">
       <button class="img-remove" onclick="removeImage(${i})">&times;</button>
-    </div>
-  `).join('');
+    </div>`).join('');
 }
-
-function clearPendingImages() {
-  pendingImages = [];
-  renderImagePreviews();
-}
+function clearPendingImages() { pendingImages = []; renderImagePreviews(); }
 
 // ════════════════════════════════════════════════════════════════════════
 // ── MODELS & SETTINGS ─────────────────────────────────────────────────
@@ -549,6 +455,14 @@ function setupListeners() {
   previewRefreshBtn.addEventListener('click', () => updatePreview(lastHtmlCode));
   setupImageHandling();
 
+  // Auth
+  loginBtn.addEventListener('click', triggerGitHubLogin);
+  logoutBtn.addEventListener('click', doLogout);
+  userAvatarBtn.addEventListener('click', () => userDropdown.classList.toggle('hidden'));
+  document.addEventListener('click', (e) => {
+    if (!userMenu.contains(e.target)) userDropdown.classList.add('hidden');
+  });
+
   // Usage modal
   usageBtn.addEventListener('click', () => { renderUsage(); usageModal.classList.remove('hidden'); });
   usageCloseBtn.addEventListener('click', () => usageModal.classList.add('hidden'));
@@ -608,10 +522,7 @@ function extractFilesFromResponse(text) {
   const regex = /```(\w+)\s*\n(?:\/\/\s*(\S+)\s*\n|<!--\s*(\S+)\s*-->\s*\n|#\s*(\S+)\s*\n)?([\s\S]*?)```/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
-    const lang = match[1];
-    const filename = match[2] || match[3] || match[4] || null;
-    const code = match[5].trim();
-    files.push({ lang, filename, code });
+    files.push({ lang: match[1], filename: match[2] || match[3] || match[4] || null, code: match[5].trim() });
   }
   return files;
 }
@@ -625,10 +536,7 @@ function checkAndShowPreview(fullText) {
     updatePreview(html);
     const files = extractFilesFromResponse(fullText);
     const htmlFile = files.find(f => f.filename && /\.(html|htm)$/i.test(f.filename));
-    if (htmlFile) {
-      previewFileName.textContent = htmlFile.filename;
-      previewFileName.classList.remove('hidden');
-    }
+    if (htmlFile) { previewFileName.textContent = htmlFile.filename; previewFileName.classList.remove('hidden'); }
   }
 }
 
@@ -653,7 +561,6 @@ async function sendMessage() {
 
   const imageUrls = pendingImages.map(img => img.dataUrl);
   const userMsg = { role: 'user', content: text || '(image)', images: imageUrls };
-
   conversationHistory.push(userMsg);
   appendMessage('user', text, imageUrls);
 
@@ -674,8 +581,6 @@ async function sendMessage() {
   abortController = new AbortController();
   let fullContent = '';
   const startTime = performance.now();
-
-  // Estimate input tokens for usage tracking
   const inputTokens = estimateTokens(text) + conversationHistory.reduce((s, m) => s + estimateTokens(m.content), 0);
 
   try {
@@ -725,10 +630,7 @@ async function sendMessage() {
                 contentEl.innerHTML = `<span class="text-red-400">Error: ${escapeHtml(parsed.error)}</span>`;
                 break;
               }
-              if (parsed.content) {
-                fullContent += parsed.content;
-                scheduleRender();
-              }
+              if (parsed.content) { fullContent += parsed.content; scheduleRender(); }
             } catch {}
           }
         }
@@ -757,22 +659,17 @@ async function sendMessage() {
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
     tokenInfo.textContent = `${elapsed}s`;
 
-    // ── Record usage ──
+    // Record usage
     const outputTokens = estimateTokens(fullContent);
     recordUsage(model, inputTokens, outputTokens, performance.now() - startTime);
 
   } catch (e) {
     hideThinking(contentEl);
-    if (e.name === 'AbortError') {
-      flashStatus('Generation stopped');
-    } else {
-      contentEl.innerHTML = `<span class="text-red-400">Error: ${escapeHtml(e.message)}</span>`;
-    }
+    if (e.name === 'AbortError') { flashStatus('Generation stopped'); }
+    else { contentEl.innerHTML = `<span class="text-red-400">Error: ${escapeHtml(e.message)}</span>`; }
   }
 
-  if (fullContent) {
-    conversationHistory.push({ role: 'assistant', content: fullContent });
-  }
+  if (fullContent) { conversationHistory.push({ role: 'assistant', content: fullContent }); }
   setStreaming(false);
   abortController = null;
   scrollToBottom();
@@ -782,14 +679,8 @@ async function sendMessage() {
 function showThinking(el) {
   el.innerHTML = `<span class="thinking-indicator">Thinking<span class="dot"></span><span class="dot"></span><span class="dot"></span></span>`;
 }
-function hideThinking(el) {
-  const t = el.querySelector('.thinking-indicator');
-  if (t) t.remove();
-}
-
-function stopGeneration() {
-  if (abortController) abortController.abort();
-}
+function hideThinking(el) { const t = el.querySelector('.thinking-indicator'); if (t) t.remove(); }
+function stopGeneration() { if (abortController) abortController.abort(); }
 
 function newChat() {
   conversationHistory = [];
@@ -802,8 +693,7 @@ function newChat() {
       <div class="text-5xl mb-4">&lt;/&gt;</div>
       <h2 class="text-2xl font-bold text-[var(--text-primary)] mb-2">Welcome to OmniCode</h2>
       <p class="text-[var(--text-muted)]">Start a new conversation. Select your model and go.</p>
-    </div>
-  `;
+    </div>`;
   chatInput.focus();
   flashStatus('New chat started');
 }
@@ -812,36 +702,24 @@ function newChat() {
 function appendMessage(role, content, images = []) {
   const div = document.createElement('div');
   div.className = `msg-appear flex gap-3 ${role === 'user' ? 'justify-end' : ''}`;
-
   if (role === 'user') {
     const imgsHtml = images.map(url => `<img src="${url}" class="chat-image" alt="uploaded">`).join('');
     const textHtml = content ? `<p>${escapeHtml(content)}</p>` : '';
-    div.innerHTML = `
-      <div class="max-w-[85%] bg-[var(--accent-dim)] border border-[var(--accent-border)] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm text-[var(--text-primary)]">
-        ${textHtml}${imgsHtml}
-      </div>
-    `;
+    div.innerHTML = `<div class="max-w-[85%] bg-[var(--accent-dim)] border border-[var(--accent-border)] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm text-[var(--text-primary)]">${textHtml}${imgsHtml}</div>`;
   } else {
     div.innerHTML = `
       <div class="shrink-0 w-8 h-8 rounded-lg bg-[var(--bg-input)] border border-[var(--border)] flex items-center justify-center text-[var(--accent)] font-bold text-xs">&lt;/&gt;</div>
       <div class="flex-1 min-w-0">
         <div class="markdown-body text-sm text-[var(--text-primary)] leading-relaxed">${content ? renderMd(content) : ''}</div>
-      </div>
-    `;
+      </div>`;
   }
-
   messageContainer.appendChild(div);
   scrollToBottom();
   return div;
 }
 
-function renderMarkdown(el, text) {
-  el.innerHTML = renderMd(text);
-}
-
-function renderMd(text) {
-  return marked.parse(text, { breaks: true });
-}
+function renderMarkdown(el, text) { el.innerHTML = renderMd(text); }
+function renderMd(text) { return marked.parse(text, { breaks: true }); }
 
 function addCopyButtons(container) {
   container.querySelectorAll('pre').forEach(pre => {
@@ -851,10 +729,7 @@ function addCopyButtons(container) {
     btn.textContent = 'Copy';
     btn.onclick = () => {
       const code = pre.querySelector('code')?.textContent || pre.textContent;
-      navigator.clipboard.writeText(code).then(() => {
-        btn.textContent = 'Copied!';
-        setTimeout(() => btn.textContent = 'Copy', 1500);
-      });
+      navigator.clipboard.writeText(code).then(() => { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); });
     };
     pre.style.position = 'relative';
     pre.appendChild(btn);
@@ -862,16 +737,8 @@ function addCopyButtons(container) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
-function escapeHtml(text) {
-  const d = document.createElement('div');
-  d.textContent = text;
-  return d.innerHTML;
-}
-
-function scrollToBottom() {
-  requestAnimationFrame(() => { chatArea.scrollTop = chatArea.scrollHeight; });
-}
-
+function escapeHtml(text) { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; }
+function scrollToBottom() { requestAnimationFrame(() => { chatArea.scrollTop = chatArea.scrollHeight; }); }
 function setStreaming(val) {
   isStreaming = val;
   sendBtn.disabled = val;
@@ -880,7 +747,6 @@ function setStreaming(val) {
   chatInput.disabled = val;
   statusText.textContent = val ? 'Thinking...' : 'Ready';
 }
-
 function flashStatus(msg) {
   statusText.textContent = msg;
   setTimeout(() => { if (!isStreaming) statusText.textContent = 'Ready'; }, 2000);

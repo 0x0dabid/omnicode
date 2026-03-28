@@ -9,7 +9,6 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body class="h-full bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col transition-colors duration-300">
 
@@ -26,42 +25,20 @@
       <!-- Login card -->
       <div class="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl p-8">
         <h2 class="text-lg font-semibold text-[var(--text-primary)] mb-2">Sign in to continue</h2>
-        <p class="text-sm text-[var(--text-muted)] mb-6">Use your Google account to access OmniCode</p>
+        <p class="text-sm text-[var(--text-muted)] mb-6">Connect your GitHub account to access OmniCode</p>
 
-        <!-- Google Sign-In button container -->
-        <div id="g_id_onload"
-             data-client_id=""
-             data-callback="handleGoogleSignIn"
-             data-auto_prompt="false">
-        </div>
-        <div id="googleBtnContainer" class="flex justify-center mb-4">
-          <button id="loginBtn" class="gsi-material-button flex items-center justify-center gap-3 w-full bg-white text-gray-700 font-medium text-sm rounded-xl px-6 py-3 hover:shadow-lg transition-all border border-gray-300">
-            <svg class="w-5 h-5" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-            </svg>
-            Sign in with Google
-          </button>
-        </div>
+        <!-- GitHub Sign-In button -->
+        <button id="loginBtn" class="w-full flex items-center justify-center gap-3 bg-[#24292e] hover:bg-[#2f363d] text-white font-medium text-sm rounded-xl px-6 py-3.5 transition-all border border-[#444d56] shadow-lg hover:shadow-xl">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+          Sign in with GitHub
+        </button>
 
-        <p id="authError" class="text-xs text-red-400 hidden"></p>
-
-        <!-- First-time setup hint -->
-        <div class="mt-4 pt-4 border-t border-[var(--border)]">
-          <p class="text-xs text-[var(--text-muted)]">First time? Set your Google Client ID in the link below:</p>
-          <button id="authSetupBtn" class="text-xs text-[var(--accent)] hover:underline mt-1">Configure Client ID</button>
-        </div>
+        <p id="authError" class="text-xs text-red-400 mt-3 hidden"></p>
       </div>
 
-      <!-- Setup panel (hidden by default) -->
-      <div id="authSetupPanel" class="hidden bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl p-6 mt-4">
-        <label class="block text-xs text-[var(--text-muted)] mb-2">Google OAuth Client ID</label>
-        <input id="authClientIdInput" type="text" placeholder="xxxx.apps.googleusercontent.com"
-               class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] mb-3">
-        <button id="authSetupSaveBtn" class="w-full bg-[var(--accent)] hover:opacity-80 text-white text-sm px-4 py-2 rounded-lg transition-colors">Save &amp; Activate</button>
-      </div>
+      <p class="text-xs text-[var(--text-muted)] mt-6 opacity-50">Your GitHub account is used for authentication only.</p>
     </div>
   </div>
 
@@ -117,7 +94,7 @@
         <div id="userDropdown" class="hidden absolute right-0 top-full mt-2 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-xl p-2 min-w-[220px] z-50 shadow-lg">
           <div class="px-3 py-2 border-b border-[var(--border)]">
             <p id="userName" class="text-sm font-medium text-[var(--text-primary)] truncate"></p>
-            <p id="userEmail" class="text-xs text-[var(--text-muted)] truncate"></p>
+            <p id="userLogin" class="text-xs text-[var(--text-muted)] truncate"></p>
           </div>
           <button id="logoutBtn" class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-[var(--bg-input)] rounded-lg transition-colors mt-1">Sign out</button>
         </div>
@@ -155,7 +132,6 @@
   <!-- Usage Monitor Modal -->
   <div id="usageModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
     <div class="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl">
-      <!-- Header -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
         <div class="flex items-center gap-3">
           <svg class="w-5 h-5 text-[var(--accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -169,10 +145,7 @@
           </svg>
         </button>
       </div>
-
-      <!-- Content -->
       <div class="px-6 py-4 space-y-6">
-        <!-- Subscription info -->
         <div class="bg-[var(--bg-input)] rounded-xl p-4 border border-[var(--border)]">
           <div class="flex items-center justify-between mb-3">
             <span class="text-sm font-medium text-[var(--text-primary)]">Z.ai GLM Coding Plan</span>
@@ -193,8 +166,6 @@
             </div>
           </div>
         </div>
-
-        <!-- 5-Hour Window -->
         <div>
           <div class="flex items-center justify-between mb-3">
             <h3 class="text-sm font-semibold text-[var(--text-primary)]">Last 5 Hours</h3>
@@ -211,13 +182,10 @@
                 <p class="text-xl font-bold text-[var(--text-primary)]" id="usage5hTokens">0</p>
               </div>
             </div>
-            <!-- Mini bar chart -->
             <div class="flex items-end gap-1 h-20" id="usage5hChart"></div>
             <div class="flex justify-between text-[10px] text-[var(--text-muted)] mt-1" id="usage5hLabels"></div>
           </div>
         </div>
-
-        <!-- Weekly Usage -->
         <div>
           <div class="flex items-center justify-between mb-3">
             <h3 class="text-sm font-semibold text-[var(--text-primary)]">Weekly Usage</h3>
@@ -238,15 +206,12 @@
                 <p class="text-xl font-bold text-[var(--text-primary)]" id="usageWeekAvg">0</p>
               </div>
             </div>
-            <!-- Weekly bar chart -->
             <div class="flex items-end gap-2 h-24" id="usageWeekChart"></div>
             <div class="flex justify-between text-[10px] text-[var(--text-muted)] mt-1">
               <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
             </div>
           </div>
         </div>
-
-        <!-- Recent Sessions -->
         <div>
           <h3 class="text-sm font-semibold text-[var(--text-primary)] mb-3">Recent Activity</h3>
           <div class="space-y-2" id="usageRecentList">
@@ -254,8 +219,6 @@
           </div>
         </div>
       </div>
-
-      <!-- Footer -->
       <div class="px-6 py-3 border-t border-[var(--border)] flex justify-between items-center">
         <span class="text-xs text-[var(--text-muted)]">Tracking since: <span id="usageTrackingStart">-</span></span>
         <button id="usageClearBtn" class="text-xs text-red-400 hover:text-red-300 transition-colors">Clear Data</button>
@@ -265,7 +228,6 @@
 
   <!-- Main Content: Chat + Preview Split -->
   <div id="mainContent" class="flex-1 flex overflow-hidden">
-    <!-- Chat Panel -->
     <div id="chatPanel" class="flex-1 flex flex-col overflow-hidden transition-all duration-300">
       <main id="chatArea" class="flex-1 overflow-y-auto px-4 py-6">
         <div id="messageContainer" class="max-w-3xl mx-auto space-y-4">
@@ -290,19 +252,14 @@
           </div>
         </div>
       </main>
-
-      <!-- Input Area -->
       <footer class="shrink-0 bg-[var(--bg-secondary)] border-t border-[var(--border)] px-4 py-3">
         <div class="max-w-3xl mx-auto">
-          <!-- Image preview strip -->
           <div id="imagePreviewStrip" class="hidden flex gap-2 mb-2 flex-wrap"></div>
           <div class="flex gap-2 items-end">
             <div class="flex-1 relative">
-              <textarea id="chatInput"
-                        rows="1"
+              <textarea id="chatInput" rows="1"
                         placeholder="Ask me to code anything... Paste images with Ctrl+V (Enter to send, Shift+Enter for newline)"
                         class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-xl px-4 py-3 pr-20 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)] max-h-40 overflow-y-auto"></textarea>
-              <!-- Image upload button -->
               <button id="imageUploadBtn" class="absolute right-10 bottom-2 text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="Upload image">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
@@ -327,8 +284,6 @@
         </div>
       </footer>
     </div>
-
-    <!-- Preview Panel -->
     <div id="previewPanel" class="hidden flex-col border-l border-[var(--border)] bg-[var(--bg-primary)]" style="width:50%">
       <div class="flex items-center justify-between px-3 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border)]">
         <div class="flex items-center gap-2">
