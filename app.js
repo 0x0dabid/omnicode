@@ -75,6 +75,10 @@ const authError        = $('#authError');
 const usageBtn         = $('#usageBtn');
 const usageModal       = $('#usageModal');
 const usageCloseBtn    = $('#usageCloseBtn');
+// Skills
+const skillsBtn        = $('#skillsBtn');
+const skillsModal      = $('#skillsModal');
+const skillsCloseBtn   = $('#skillsCloseBtn');
 // Chat History
 const historyToggle    = $('#historyToggle');
 const historySidebar   = $('#historySidebar');
@@ -86,6 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupListeners();
   setupAuth();
   loadChatHistory();
+  renderSkillsList(); // update skills indicator
   chatInput.focus();
 });
 
@@ -136,6 +141,176 @@ function flashAuthStatus(msg) {
   authError.textContent = msg;
   authError.classList.remove('hidden');
   setTimeout(() => authError.classList.add('hidden'), 5000);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ── SKILLS (Claude-style) ─────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+
+const SKILLS_KEY = 'omnicode_skills';
+
+// Built-in default skills
+const BUILT_IN_SKILLS = [
+  {
+    id: 'builtin-react',
+    name: 'React Expert',
+    desc: 'React + TypeScript best practices',
+    icon: '⚛',
+    content: 'You are a React expert. Always use TypeScript, functional components, and hooks. Prefer Tailwind CSS for styling. Follow React best practices: proper state management, memoization when needed, clean component composition. Output complete, runnable code.',
+    active: false,
+    builtin: true,
+  },
+  {
+    id: 'builtin-python',
+    name: 'Python Pro',
+    desc: 'Python data science & backend',
+    icon: '🐍',
+    content: 'You are a Python expert. Write clean, Pythonic code following PEP 8. Prefer type hints, dataclasses, and modern Python 3.11+ features. For web apps use FastAPI. For data work use pandas/numpy. Always include error handling and docstrings.',
+    active: false,
+    builtin: true,
+  },
+  {
+    id: 'builtin-gamedev',
+    name: 'Game Developer',
+    desc: 'HTML5 Canvas & game design',
+    icon: '🎮',
+    content: 'You are a game developer expert. Build games using HTML5 Canvas and vanilla JavaScript. Always include: game loop with requestAnimationFrame, proper input handling (keyboard + mouse), collision detection, score tracking, start/restart screens, and smooth animations. Make games fun and polished.',
+    active: false,
+    builtin: true,
+  },
+  {
+    id: 'builtin-ux',
+    name: 'UI/UX Designer',
+    desc: 'Beautiful, accessible interfaces',
+    icon: '🎨',
+    content: 'You are a UI/UX design expert. Create visually stunning, responsive interfaces. Use modern CSS: gradients, shadows, animations, glassmorphism. Follow accessibility best practices. Always use semantic HTML. Design mobile-first. Output complete, beautiful, production-ready HTML/CSS/JS.',
+    active: false,
+    builtin: true,
+  },
+  {
+    id: 'builtin-debug',
+    name: 'Debug Detective',
+    desc: 'Find and fix bugs fast',
+    icon: '🔍',
+    content: 'You are a debugging expert. When given code with issues: 1) Identify the root cause clearly, 2) Explain WHY it happens, 3) Provide the minimal fix, 4) Suggest how to prevent similar bugs. Be thorough but concise. Always test edge cases.',
+    active: false,
+    builtin: true,
+  },
+  {
+    id: 'builtin-api',
+    name: 'API Architect',
+    desc: 'REST & API design patterns',
+    icon: '🔌',
+    content: 'You are an API design expert. Build clean RESTful APIs with proper HTTP methods, status codes, pagination, error responses, and validation. Use OpenAPI conventions. Include authentication patterns. Write complete, deployable server code with proper error handling.',
+    active: false,
+    builtin: true,
+  },
+  {
+    id: 'builtin-teacher',
+    name: 'Code Teacher',
+    desc: 'Explain code step by step',
+    icon: '📚',
+    content: 'You are a patient coding teacher. When explaining code: 1) Start with a high-level overview, 2) Break down each section with clear comments, 3) Use analogies to explain complex concepts, 4) Provide visual diagrams when helpful (ASCII), 5) Suggest exercises to practice. Never assume prior knowledge.',
+    active: false,
+    builtin: true,
+  },
+];
+
+function getAllSkills() {
+  const saved = JSON.parse(localStorage.getItem(SKILLS_KEY) || 'null');
+  if (!saved) {
+    // First run -- save built-in skills
+    localStorage.setItem(SKILLS_KEY, JSON.stringify(BUILT_IN_SKILLS));
+    return [...BUILT_IN_SKILLS];
+  }
+  return saved;
+}
+
+function saveAllSkills(skills) {
+  localStorage.setItem(SKILLS_KEY, JSON.stringify(skills));
+}
+
+function toggleSkill(id) {
+  const skills = getAllSkills();
+  const skill = skills.find(s => s.id === id);
+  if (skill) skill.active = !skill.active;
+  saveAllSkills(skills);
+  renderSkillsList();
+}
+
+function deleteSkill(id, e) {
+  e.stopPropagation();
+  const skills = getAllSkills().filter(s => s.id !== id);
+  saveAllSkills(skills);
+  renderSkillsList();
+}
+
+function createSkill() {
+  const name = $('#skillNameInput').value.trim();
+  const desc = $('#skillDescInput').value.trim();
+  const content = $('#skillContentInput').value.trim();
+  if (!name || !content) {
+    alert('Name and instructions are required.');
+    return;
+  }
+  const skills = getAllSkills();
+  skills.push({
+    id: 'custom-' + Date.now(),
+    name,
+    desc: desc || 'Custom skill',
+    icon: '⚡',
+    content,
+    active: true,
+    builtin: false,
+  });
+  saveAllSkills(skills);
+  $('#skillNameInput').value = '';
+  $('#skillDescInput').value = '';
+  $('#skillContentInput').value = '';
+  renderSkillsList();
+}
+
+function getActiveSkillsPrompt() {
+  const skills = getAllSkills().filter(s => s.active);
+  if (skills.length === 0) return null;
+  return skills.map(s => `## Skill: ${s.name}\n${s.content}`).join('\n\n');
+}
+
+function renderSkillsList() {
+  const skills = getAllSkills();
+  const list = $('#skillsList');
+  const activeCount = skills.filter(s => s.active).length;
+  $('#activeSkillsCount').textContent = activeCount;
+
+  // Update footer indicator
+  const indicator = $('#activeSkillsIndicator');
+  if (indicator) {
+    if (activeCount > 0) {
+      indicator.classList.remove('hidden');
+      indicator.textContent = '⚡ ' + activeCount + ' skill' + (activeCount > 1 ? 's' : '') + ' active';
+    } else {
+      indicator.classList.add('hidden');
+    }
+  }
+
+  list.innerHTML = skills.map(s => `
+    <div class="flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors cursor-pointer ${s.active ? 'bg-[var(--accent)]/10 border-[var(--accent)]/30' : 'bg-[var(--bg-input)] border-[var(--border)] hover:border-[var(--accent)]/30'}" onclick="toggleSkill('${s.id}')">
+      <span class="text-xl shrink-0">${s.icon}</span>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2">
+          <p class="text-sm font-medium text-[var(--text-primary)] truncate">${escapeHtml(s.name)}</p>
+          ${s.builtin ? '<span class="text-[9px] bg-[var(--bg-primary)] text-[var(--text-muted)] px-1.5 py-0.5 rounded">built-in</span>' : ''}
+        </div>
+        <p class="text-xs text-[var(--text-muted)] truncate">${escapeHtml(s.desc)}</p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        ${!s.builtin ? `<button onclick="deleteSkill('${s.id}', event)" class="text-[var(--text-muted)] hover:text-red-400 transition-colors" title="Delete skill"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : ''}
+        <div class="w-10 h-5 rounded-full transition-colors ${s.active ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'} relative">
+          <div class="absolute top-0.5 ${s.active ? 'left-5' : 'left-0.5'} w-4 h-4 bg-white rounded-full transition-all shadow-sm"></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -623,6 +798,13 @@ function setupListeners() {
   const usageRefreshBtn = $('#usageRefreshBtn');
   if (usageRefreshBtn) usageRefreshBtn.addEventListener('click', () => renderUsage());
 
+  // Skills modal
+  if (skillsBtn) skillsBtn.addEventListener('click', () => { renderSkillsList(); skillsModal.classList.remove('hidden'); });
+  if (skillsCloseBtn) skillsCloseBtn.addEventListener('click', () => skillsModal.classList.add('hidden'));
+  if (skillsModal) skillsModal.addEventListener('click', (e) => { if (e.target === skillsModal) skillsModal.classList.add('hidden'); });
+  const createSkillBtn = $('#createSkillBtn');
+  if (createSkillBtn) createSkillBtn.addEventListener('click', createSkill);
+
   // Chat history sidebar
   if (historyToggle) historyToggle.addEventListener('click', toggleHistory);
   const historyClose = $('#historyCloseBtn');
@@ -746,12 +928,19 @@ async function sendMessage() {
   const startTime = performance.now();
   const inputTokens = estimateTokens(text) + conversationHistory.reduce((s, m) => s + estimateTokens(m.content), 0);
 
+  // Inject active skills as system prompt
+  const skillsPrompt = getActiveSkillsPrompt();
+  let messagesToSend = [...conversationHistory];
+  if (skillsPrompt) {
+    messagesToSend = [{ role: 'system', content: skillsPrompt }, ...messagesToSend];
+  }
+
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model, messages: conversationHistory,
+        model, messages: messagesToSend,
         api_key: apiKey, api_base: apiBase, temperature, stream: true,
       }),
       signal: abortController.signal,

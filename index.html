@@ -55,6 +55,12 @@
       <select id="modelSelect" class="bg-[var(--bg-input)] border border-[var(--border)] text-sm rounded-lg px-3 py-1.5 text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer">
         <option disabled selected>Loading models...</option>
       </select>
+      <!-- Skills button -->
+      <button id="skillsBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="Skills">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+      </button>
       <!-- Usage button -->
       <button id="usageBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="Usage Monitor">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -265,6 +271,44 @@
     </div>
   </div>
 
+  <!-- Skills Modal -->
+  <div id="skillsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div class="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-2xl">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-[var(--accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          <h2 class="text-lg font-semibold text-[var(--text-primary)]">Skills</h2>
+        </div>
+        <button id="skillsCloseBtn" class="text-[var(--text-muted)] hover:text-red-400 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="px-6 py-4 space-y-4">
+        <!-- Active skills badge -->
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-[var(--text-muted)]">Active skills:</span>
+          <span id="activeSkillsCount" class="text-xs font-bold text-[var(--accent)]">0</span>
+        </div>
+        <!-- Skills list -->
+        <div id="skillsList" class="space-y-2"></div>
+        <!-- Create new skill -->
+        <div class="border-t border-[var(--border)] pt-4">
+          <h3 class="text-sm font-semibold text-[var(--text-primary)] mb-3">Create Custom Skill</h3>
+          <div class="space-y-3">
+            <input id="skillNameInput" type="text" placeholder="Skill name (e.g. React Expert)" class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]">
+            <input id="skillDescInput" type="text" placeholder="Short description" class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]">
+            <textarea id="skillContentInput" rows="4" placeholder="Skill instructions - this gets injected into your chat as system context. Example: 'You are a React expert. Always use TypeScript, functional components, and hooks. Prefer Tailwind CSS for styling.'" class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)]"></textarea>
+            <button id="createSkillBtn" class="bg-[var(--accent)] hover:opacity-80 text-white text-sm px-4 py-2 rounded-lg transition-colors">Create Skill</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Main Content: History Sidebar + Chat + Preview Split -->
   <div id="mainContent" class="flex-1 flex overflow-hidden relative">
     <!-- Chat History Sidebar -->
@@ -331,7 +375,10 @@
             </button>
           </div>
           <div class="flex justify-between mt-1">
-            <span id="statusText" class="text-xs text-[var(--text-muted)]">Ready</span>
+            <div class="flex items-center gap-3">
+              <span id="statusText" class="text-xs text-[var(--text-muted)]">Ready</span>
+              <span id="activeSkillsIndicator" class="hidden text-[10px] bg-[var(--accent)]/20 text-[var(--accent)] px-1.5 py-0.5 rounded-full font-medium cursor-pointer" onclick="skillsBtn.click()">⚡ 0 skills active</span>
+            </div>
             <span id="tokenInfo" class="text-xs text-[var(--text-muted)]"></span>
           </div>
         </div>
