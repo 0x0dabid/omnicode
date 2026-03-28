@@ -18,9 +18,11 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "GITHUB_CLIENT_ID not set in Vercel env vars." });
   }
 
-  const origin = req.headers.origin || req.headers.referer?.split("/api")[0] || "";
-  const redirectBase = origin || `https://${req.headers.host}`;
-  const redirectUri = `${redirectBase}/api/auth/github`;
+  // Build redirect_uri from the request host — must EXACTLY match the
+  // "Authorization callback URL" in your GitHub OAuth App settings.
+  const protocol = req.headers["x-forwarded-proto"] || "https";
+  const host = req.headers.host;
+  const redirectUri = `${protocol}://${host}/api/auth/github`;
   const scope = "read:user user:email";
 
   const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
