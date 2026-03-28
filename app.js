@@ -55,6 +55,15 @@ const previewFileName  = $('#previewFileName');
 const imagePreviewStrip= $('#imagePreviewStrip');
 const imageUploadBtn   = $('#imageUploadBtn');
 const imageFileInput   = $('#imageFileInput');
+const loginBtn         = $('#loginBtn');
+const userMenu         = $('#userMenu');
+const userAvatarBtn    = $('#userAvatarBtn');
+const userAvatar       = $('#userAvatar');
+const userName         = $('#userName');
+const userEmail        = $('#userEmail');
+const userDropdown     = $('#userDropdown');
+const logoutBtn        = $('#logoutBtn');
+const googleClientIdInput = $('#googleClientIdInput');
 
 // ── Initialize ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -62,8 +71,84 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadSettings();
   await loadModels();
   setupListeners();
+  loadUserSession();
   chatInput.focus();
 });
+
+// ── Google Auth ────────────────────────────────────────────────────────
+function loadUserSession() {
+  const user = JSON.parse(localStorage.getItem('omnicode_user') || 'null');
+  if (user) {
+    showLoggedIn(user);
+  }
+}
+
+function initGoogleAuth() {
+  const clientId = localStorage.getItem('omnicode_google_client_id');
+  if (!clientId) {
+    flashStatus('Set your Google Client ID in settings first');
+    settingsPanel.classList.remove('hidden');
+    return;
+  }
+  if (typeof google === 'undefined' || !google.accounts) {
+    flashStatus('Google Sign-In still loading, try again in a moment');
+    return;
+  }
+
+  try {
+    google.accounts.id.initialize({
+      client_id: clientId,
+      callback: handleGoogleSignIn,
+      auto_select: false,
+    });
+    google.accounts.id.prompt((notification) => {
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        // Fallback: render the One Tap button as a popup
+        google.accounts.id.renderButton(loginBtn, {
+          theme: 'filled_black',
+          size: 'medium',
+          text: 'signin_with',
+          shape: 'rectangular',
+        });
+      }
+    });
+  } catch (e) {
+    flashStatus('Google Sign-In error: ' + e.message);
+  }
+}
+
+function handleGoogleSignIn(response) {
+  try {
+    // Decode the JWT token
+    const payload = JSON.parse(atob(response.credential.split('.')[1]));
+    const user = {
+      name: payload.name || payload.given_name || 'User',
+      email: payload.email,
+      picture: payload.picture,
+    };
+    localStorage.setItem('omnicode_user', JSON.stringify(user));
+    showLoggedIn(user);
+    flashStatus(`Welcome, ${user.name}!`);
+  } catch (e) {
+    flashStatus('Login failed: ' + e.message);
+  }
+}
+
+function showLoggedIn(user) {
+  loginBtn.classList.add('hidden');
+  userMenu.classList.remove('hidden');
+  userAvatar.src = user.picture;
+  userName.textContent = user.name;
+  userEmail.textContent = user.email;
+}
+
+function showLoggedOut() {
+  loginBtn.classList.remove('hidden');
+  userMenu.classList.add('hidden');
+  userDropdown.classList.add('hidden');
+  localStorage.removeItem('omnicode_user');
+  flashStatus('Signed out');
+}
 
 // ── Theme ──────────────────────────────────────────────────────────────
 function loadTheme() { applyTheme(localStorage.getItem('omnicode_theme') || 'dark'); }
@@ -193,6 +278,7 @@ async function loadModels() {
 function loadSettings() {
   apiKeyInput.value = localStorage.getItem('omnicode_api_key') || '';
   apiBaseInput.value = localStorage.getItem('omnicode_api_base') || '';
+  googleClientIdInput.value = localStorage.getItem('omnicode_google_client_id') || '';
   const temp = localStorage.getItem('omnicode_temperature');
   if (temp) { tempInput.value = temp; tempValue.textContent = temp; }
   const savedModel = localStorage.getItem('omnicode_model');
@@ -204,6 +290,7 @@ function saveSettings() {
   localStorage.setItem('omnicode_api_base', apiBaseInput.value);
   localStorage.setItem('omnicode_temperature', tempInput.value);
   localStorage.setItem('omnicode_model', modelSelect.value);
+  localStorage.setItem('omnicode_google_client_id', googleClientIdInput.value);
   settingsPanel.classList.add('hidden');
   flashStatus('Settings saved');
 }
@@ -225,6 +312,14 @@ function setupListeners() {
   previewCloseBtn.addEventListener('click', closePreview);
   previewRefreshBtn.addEventListener('click', () => updatePreview(lastHtmlCode));
   setupImageHandling();
+  // Auth listeners
+  loginBtn.addEventListener('click', initGoogleAuth);
+  userAvatarBtn.addEventListener('click', () => userDropdown.classList.toggle('hidden'));
+  logoutBtn.addEventListener('click', showLoggedOut);
+  // Close dropdown on outside click
+  document.addEventListener('click', (e) => {
+    if (!userMenu.contains(e.target)) userDropdown.classList.add('hidden');
+  });
 }
 
 function autoResize() {
