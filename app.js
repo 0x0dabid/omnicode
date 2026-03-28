@@ -1,5 +1,7 @@
 /**
  * OmniCode — Frontend Application
+ * + Google Auth Wall (must sign in to access)
+ * + Usage Monitor (5-hour rolling + weekly)
  * + Real streaming (SSE)
  * + Image paste/upload support (multimodal)
  * + Live HTML preview with multi-file detection
@@ -23,7 +25,8 @@ let abortController = null;
 let models = [];
 let previewOpen = false;
 let lastHtmlCode = '';
-let pendingImages = []; // { dataUrl, file }
+let pendingImages = [];
+let currentUser = null;
 
 // ── DOM refs ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -55,6 +58,8 @@ const previewFileName  = $('#previewFileName');
 const imagePreviewStrip= $('#imagePreviewStrip');
 const imageUploadBtn   = $('#imageUploadBtn');
 const imageFileInput   = $('#imageFileInput');
+// Auth
+const authWall         = $('#authWall');
 const loginBtn         = $('#loginBtn');
 const userMenu         = $('#userMenu');
 const userAvatarBtn    = $('#userAvatarBtn');
@@ -63,94 +68,322 @@ const userName         = $('#userName');
 const userEmail        = $('#userEmail');
 const userDropdown     = $('#userDropdown');
 const logoutBtn        = $('#logoutBtn');
-const googleClientIdInput = $('#googleClientIdInput');
+const authError        = $('#authError');
+const authSetupBtn     = $('#authSetupBtn');
+const authSetupPanel   = $('#authSetupPanel');
+const authClientIdInput= $('#authClientIdInput');
+const authSetupSaveBtn = $('#authSetupSaveBtn');
+// Usage
+const usageBtn         = $('#usageBtn');
+const usageModal       = $('#usageModal');
+const usageCloseBtn    = $('#usageCloseBtn');
+const usageClearBtn    = $('#usageClearBtn');
 
 // ── Initialize ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   loadTheme();
-  loadSettings();
-  await loadModels();
+  setupAuth();
   setupListeners();
-  loadUserSession();
-  chatInput.focus();
-});
 
-// ── Google Auth ────────────────────────────────────────────────────────
-function loadUserSession() {
+  // Check if already logged in
   const user = JSON.parse(localStorage.getItem('omnicode_user') || 'null');
   if (user) {
-    showLoggedIn(user);
+    currentUser = user;
+    showApp(user);
   }
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// ── AUTH ──────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+
+function setupAuth() {
+  loginBtn.addEventListener('click', triggerGoogleSignIn);
+  logoutBtn.addEventListener('click', doLogout);
+  authSetupBtn.addEventListener('click', () => authSetupPanel.classList.toggle('hidden'));
+
+  authSetupSaveBtn.addEventListener('click', () => {
+    const cid = authClientIdInput.value.trim();
+    if (!cid) { alert('Please enter a Client ID'); return; }
+    localStorage.setItem('omnicode_google_client_id', cid);
+    authSetupPanel.classList.add('hidden');
+    authError.classList.add('hidden');
+    flashAuthStatus('Client ID saved! Click Sign in now.');
+  });
+
+  userAvatarBtn.addEventListener('click', () => userDropdown.classList.toggle('hidden'));
+  document.addEventListener('click', (e) => {
+    if (!userMenu.contains(e.target)) userDropdown.classList.add('hidden');
+  });
+
+  // Pre-fill client id
+  authClientIdInput.value = localStorage.getItem('omnicode_google_client_id') || '';
 }
 
-function initGoogleAuth() {
+function triggerGoogleSignIn() {
   const clientId = localStorage.getItem('omnicode_google_client_id');
   if (!clientId) {
-    flashStatus('Set your Google Client ID in settings first');
-    settingsPanel.classList.remove('hidden');
+    authSetupPanel.classList.remove('hidden');
+    flashAuthStatus('Set your Google Client ID first.');
     return;
   }
   if (typeof google === 'undefined' || !google.accounts) {
-    flashStatus('Google Sign-In still loading, try again in a moment');
+    flashAuthStatus('Google Sign-In is still loading. Try again in 2 seconds.');
     return;
   }
-
   try {
     google.accounts.id.initialize({
       client_id: clientId,
       callback: handleGoogleSignIn,
-      auto_select: false,
     });
+    // Show the One Tap prompt
     google.accounts.id.prompt((notification) => {
       if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        // Fallback: render the One Tap button as a popup
-        google.accounts.id.renderButton(loginBtn, {
-          theme: 'filled_black',
-          size: 'medium',
-          text: 'signin_with',
-          shape: 'rectangular',
+        // Use popup as fallback
+        const tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'openid profile email',
+          callback: handleGoogleSignIn,
         });
+        tokenClient.requestAccessToken();
       }
     });
   } catch (e) {
-    flashStatus('Google Sign-In error: ' + e.message);
+    flashAuthStatus('Error: ' + e.message);
   }
 }
 
+// Global callback for Google Sign-In
 function handleGoogleSignIn(response) {
   try {
-    // Decode the JWT token
-    const payload = JSON.parse(atob(response.credential.split('.')[1]));
+    let payload;
+    if (response.credential) {
+      // One Tap / credential response
+      payload = JSON.parse(atob(response.credential.split('.')[1]));
+    } else if (response.access_token) {
+      // OAuth2 token response — fetch user info
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: 'Bearer ' + response.access_token }
+      }).then(r => r.json()).then(info => {
+        const user = { name: info.name, email: info.email, picture: info.picture };
+        loginSuccess(user);
+      }).catch(e => flashAuthStatus('Failed to get user info: ' + e.message));
+      return;
+    } else {
+      flashAuthStatus('Unknown sign-in response');
+      return;
+    }
     const user = {
       name: payload.name || payload.given_name || 'User',
       email: payload.email,
       picture: payload.picture,
     };
-    localStorage.setItem('omnicode_user', JSON.stringify(user));
-    showLoggedIn(user);
-    flashStatus(`Welcome, ${user.name}!`);
+    loginSuccess(user);
   } catch (e) {
-    flashStatus('Login failed: ' + e.message);
+    flashAuthStatus('Login failed: ' + e.message);
   }
 }
+// Expose globally for Google callback
+window.handleGoogleSignIn = handleGoogleSignIn;
 
-function showLoggedIn(user) {
-  loginBtn.classList.add('hidden');
-  userMenu.classList.remove('hidden');
+function loginSuccess(user) {
+  currentUser = user;
+  localStorage.setItem('omnicode_user', JSON.stringify(user));
+  showApp(user);
+}
+
+function showApp(user) {
+  authWall.classList.add('hidden');
   userAvatar.src = user.picture;
   userName.textContent = user.name;
   userEmail.textContent = user.email;
+
+  // Load app stuff once
+  loadSettings();
+  loadModels();
+  chatInput.focus();
 }
 
-function showLoggedOut() {
-  loginBtn.classList.remove('hidden');
-  userMenu.classList.add('hidden');
-  userDropdown.classList.add('hidden');
+function doLogout() {
+  currentUser = null;
   localStorage.removeItem('omnicode_user');
-  flashStatus('Signed out');
+  userDropdown.classList.add('hidden');
+  authWall.classList.remove('hidden');
+  if (typeof google !== 'undefined' && google.accounts) {
+    google.accounts.id.disableAutoSelect();
+  }
 }
 
-// ── Theme ──────────────────────────────────────────────────────────────
+function flashAuthStatus(msg) {
+  authError.textContent = msg;
+  authError.classList.remove('hidden');
+  setTimeout(() => authError.classList.add('hidden'), 4000);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ── USAGE MONITOR ─────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+
+const USAGE_KEY = 'omnicode_usage_log';
+const USAGE_START_KEY = 'omnicode_usage_start';
+
+function getUsageLog() {
+  return JSON.parse(localStorage.getItem(USAGE_KEY) || '[]');
+}
+
+function saveUsageLog(log) {
+  localStorage.setItem(USAGE_KEY, JSON.stringify(log));
+  if (!localStorage.getItem(USAGE_START_KEY)) {
+    localStorage.setItem(USAGE_START_KEY, new Date().toISOString());
+  }
+}
+
+function recordUsage(model, inputTokens, outputTokens, elapsedMs) {
+  const log = getUsageLog();
+  log.push({
+    ts: Date.now(),
+    model,
+    inTokens: inputTokens || 0,
+    outTokens: outputTokens || 0,
+    elapsed: elapsedMs || 0,
+  });
+  saveUsageLog(log);
+}
+
+function estimateTokens(text) {
+  if (!text) return 0;
+  // Rough: 1 token ~ 4 chars
+  return Math.ceil(text.length / 4);
+}
+
+function renderUsage() {
+  const log = getUsageLog();
+  const now = Date.now();
+  const fiveHours = 5 * 60 * 60 * 1000;
+  const oneWeek = 7 * 24 * 60 * 60 * 1000;
+
+  // ── Totals ──
+  const totalReq = log.length;
+  const totalTokens = log.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
+  const totalCost = (totalTokens / 1_000_000 * 0.15).toFixed(2); // rough estimate
+  $('#usageTotalReq').textContent = totalReq.toLocaleString();
+  $('#usageTotalTokens').textContent = totalTokens.toLocaleString();
+  $('#usageTotalCost').textContent = '$' + totalCost;
+
+  // ── 5-Hour Window ──
+  const fiveHourEntries = log.filter(e => (now - e.ts) < fiveHours);
+  const fiveHReq = fiveHourEntries.length;
+  const fiveHTokens = fiveHourEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
+  $('#usage5hReq').textContent = fiveHReq;
+  $('#usage5hTokens').textContent = fiveHTokens.toLocaleString();
+
+  // 5-hour chart: split into 5 x 1-hour buckets
+  const hourBuckets = [];
+  for (let i = 0; i < 5; i++) {
+    const bucketStart = now - (5 - i) * 60 * 60 * 1000;
+    const bucketEnd = bucketStart + 60 * 60 * 1000;
+    const entries = fiveHourEntries.filter(e => e.ts >= bucketStart && e.ts < bucketEnd);
+    const tokens = entries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
+    hourBuckets.push({ entries: entries.length, tokens });
+  }
+  const maxBucket = Math.max(1, ...hourBuckets.map(b => b.tokens));
+  const chart5h = $('#usage5hChart');
+  const labels5h = $('#usage5hLabels');
+  chart5h.innerHTML = hourBuckets.map((b, i) => {
+    const pct = Math.max(2, (b.tokens / maxBucket) * 100);
+    const hoursAgo = 5 - i;
+    return `<div class="flex-1 flex flex-col items-center justify-end h-full">
+      <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${formatTokenCount(b.tokens)}</span>
+      <div class="w-full rounded-t" style="height:${pct}%;background:var(--accent);min-height:2px;opacity:${0.4 + 0.6 * (b.tokens / maxBucket)}"></div>
+    </div>`;
+  }).join('');
+  labels5h.innerHTML = [5,4,3,2,1,0].map(h => `<span>${h === 0 ? 'Now' : h + 'h'}</span>`).join('');
+
+  // ── Weekly ──
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1); // Monday
+  weekStart.setHours(0,0,0,0);
+  const weekEntries = log.filter(e => e.ts >= weekStart.getTime());
+  const weekReq = weekEntries.length;
+  const weekTokens = weekEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
+  const daysActive = Math.max(1, Math.ceil((now - weekStart.getTime()) / (24*60*60*1000)));
+  $('#usageWeekReq').textContent = weekReq;
+  $('#usageWeekTokens').textContent = weekTokens.toLocaleString();
+  $('#usageWeekAvg').textContent = Math.round(weekReq / daysActive);
+
+  // Week range label
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  $('#usageWeekRange').textContent = formatDate(weekStart) + ' - ' + formatDate(weekEnd);
+
+  // Weekly chart: 7 days Mon-Sun
+  const dayBuckets = [];
+  for (let d = 0; d < 7; d++) {
+    const dayStart = new Date(weekStart);
+    dayStart.setDate(dayStart.getDate() + d);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    const entries = weekEntries.filter(e => e.ts >= dayStart.getTime() && e.ts < dayEnd.getTime());
+    const tokens = entries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
+    dayBuckets.push({ entries: entries.length, tokens });
+  }
+  const maxDay = Math.max(1, ...dayBuckets.map(b => b.tokens));
+  const chartWeek = $('#usageWeekChart');
+  chartWeek.innerHTML = dayBuckets.map((b, i) => {
+    const pct = Math.max(2, (b.tokens / maxDay) * 100);
+    const isToday = (i === (new Date().getDay() + 6) % 7);
+    return `<div class="flex-1 flex flex-col items-center justify-end h-full">
+      <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${formatTokenCount(b.tokens)}</span>
+      <div class="w-full rounded-t" style="height:${pct}%;background:${isToday ? 'var(--accent)' : 'var(--border)'};min-height:2px;${isToday ? 'opacity:1' : 'opacity:0.6'}"></div>
+    </div>`;
+  }).join('');
+
+  // ── Recent Activity ──
+  const recent = log.slice(-10).reverse();
+  const recentList = $('#usageRecentList');
+  if (recent.length === 0) {
+    recentList.innerHTML = '<p class="text-xs text-[var(--text-muted)] text-center py-4">No activity yet</p>';
+  } else {
+    recentList.innerHTML = recent.map(e => {
+      const ago = timeAgo(e.ts);
+      const tokens = e.inTokens + e.outTokens;
+      return `<div class="flex items-center justify-between bg-[var(--bg-primary)] rounded-lg px-3 py-2 text-xs">
+        <div class="flex items-center gap-2">
+          <span class="text-[var(--accent)] font-mono">${e.model || 'unknown'}</span>
+          <span class="text-[var(--text-muted)]">${tokens.toLocaleString()} tokens</span>
+        </div>
+        <span class="text-[var(--text-muted)]">${ago}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Tracking start
+  const trackingStart = localStorage.getItem(USAGE_START_KEY);
+  $('#usageTrackingStart').textContent = trackingStart ? formatDate(new Date(trackingStart)) : '-';
+}
+
+function formatTokenCount(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return n.toString();
+}
+
+function formatDate(d) {
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function timeAgo(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+  return Math.floor(diff/86400000) + 'd ago';
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ── THEME ─────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+
 function loadTheme() { applyTheme(localStorage.getItem('omnicode_theme') || 'dark'); }
 function applyTheme(id) {
   document.documentElement.setAttribute('data-theme', id);
@@ -176,9 +409,11 @@ function toggleThemeMenu() {
   themeBtn.appendChild(menu);
 }
 
-// ── Image Handling ─────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+// ── IMAGE HANDLING ────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+
 function setupImageHandling() {
-  // Paste from clipboard
   chatInput.addEventListener('paste', (e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -191,8 +426,6 @@ function setupImageHandling() {
       }
     }
   });
-
-  // Drag and drop
   chatInput.addEventListener('drop', (e) => {
     e.preventDefault();
     const files = e.dataTransfer?.files;
@@ -203,8 +436,6 @@ function setupImageHandling() {
     }
   });
   chatInput.addEventListener('dragover', (e) => e.preventDefault());
-
-  // File input
   imageUploadBtn.addEventListener('click', () => imageFileInput.click());
   imageFileInput.addEventListener('change', () => {
     for (const f of imageFileInput.files) {
@@ -249,7 +480,10 @@ function clearPendingImages() {
   renderImagePreviews();
 }
 
-// ── Models ─────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+// ── MODELS & SETTINGS ─────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+
 async function loadModels() {
   try {
     const res = await fetch('/api/models');
@@ -278,7 +512,6 @@ async function loadModels() {
 function loadSettings() {
   apiKeyInput.value = localStorage.getItem('omnicode_api_key') || '';
   apiBaseInput.value = localStorage.getItem('omnicode_api_base') || '';
-  googleClientIdInput.value = localStorage.getItem('omnicode_google_client_id') || '';
   const temp = localStorage.getItem('omnicode_temperature');
   if (temp) { tempInput.value = temp; tempValue.textContent = temp; }
   const savedModel = localStorage.getItem('omnicode_model');
@@ -290,10 +523,13 @@ function saveSettings() {
   localStorage.setItem('omnicode_api_base', apiBaseInput.value);
   localStorage.setItem('omnicode_temperature', tempInput.value);
   localStorage.setItem('omnicode_model', modelSelect.value);
-  localStorage.setItem('omnicode_google_client_id', googleClientIdInput.value);
   settingsPanel.classList.add('hidden');
   flashStatus('Settings saved');
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// ── LISTENERS ─────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
 
 function setupListeners() {
   settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('hidden'));
@@ -312,13 +548,17 @@ function setupListeners() {
   previewCloseBtn.addEventListener('click', closePreview);
   previewRefreshBtn.addEventListener('click', () => updatePreview(lastHtmlCode));
   setupImageHandling();
-  // Auth listeners
-  loginBtn.addEventListener('click', initGoogleAuth);
-  userAvatarBtn.addEventListener('click', () => userDropdown.classList.toggle('hidden'));
-  logoutBtn.addEventListener('click', showLoggedOut);
-  // Close dropdown on outside click
-  document.addEventListener('click', (e) => {
-    if (!userMenu.contains(e.target)) userDropdown.classList.add('hidden');
+
+  // Usage modal
+  usageBtn.addEventListener('click', () => { renderUsage(); usageModal.classList.remove('hidden'); });
+  usageCloseBtn.addEventListener('click', () => usageModal.classList.add('hidden'));
+  usageModal.addEventListener('click', (e) => { if (e.target === usageModal) usageModal.classList.add('hidden'); });
+  usageClearBtn.addEventListener('click', () => {
+    if (confirm('Clear all usage data?')) {
+      localStorage.removeItem(USAGE_KEY);
+      localStorage.removeItem(USAGE_START_KEY);
+      renderUsage();
+    }
   });
 }
 
@@ -333,7 +573,10 @@ function insertPrompt(text) {
   autoResize();
 }
 
-// ── Preview ────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+// ── PREVIEW ───────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+
 function togglePreview() { previewOpen ? closePreview() : openPreview(); }
 function openPreview() {
   previewOpen = true;
@@ -353,10 +596,8 @@ function updatePreview(html) {
 }
 
 function extractHtmlFromResponse(text) {
-  // Try ```html code blocks first
   const htmlMatch = text.match(/```html\s*\n([\s\S]*?)```/);
   if (htmlMatch) return htmlMatch[1].trim();
-  // Try bare HTML
   const bareMatch = text.match(/((?:<!DOCTYPE|<html)[\s\S]*<\/html>)/i);
   if (bareMatch) return bareMatch[1].trim();
   return null;
@@ -364,7 +605,6 @@ function extractHtmlFromResponse(text) {
 
 function extractFilesFromResponse(text) {
   const files = [];
-  // Match code blocks: ```lang followed by optional filename comment
   const regex = /```(\w+)\s*\n(?:\/\/\s*(\S+)\s*\n|<!--\s*(\S+)\s*-->\s*\n|#\s*(\S+)\s*\n)?([\s\S]*?)```/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -383,7 +623,6 @@ function checkAndShowPreview(fullText) {
     previewToggleBtn.classList.remove('hidden');
     if (!previewOpen) openPreview();
     updatePreview(html);
-    // Show filename
     const files = extractFilesFromResponse(fullText);
     const htmlFile = files.find(f => f.filename && /\.(html|htm)$/i.test(f.filename));
     if (htmlFile) {
@@ -393,7 +632,10 @@ function checkAndShowPreview(fullText) {
   }
 }
 
-// ── Chat ───────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+// ── CHAT ──────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+
 async function sendMessage() {
   const text = chatInput.value.trim();
   if ((!text && pendingImages.length === 0) || isStreaming) return;
@@ -409,7 +651,6 @@ async function sendMessage() {
   const welcome = messageContainer.querySelector('.text-center');
   if (welcome) welcome.remove();
 
-  // Build message with images
   const imageUrls = pendingImages.map(img => img.dataUrl);
   const userMsg = { role: 'user', content: text || '(image)', images: imageUrls };
 
@@ -420,7 +661,6 @@ async function sendMessage() {
   chatInput.style.height = 'auto';
   clearPendingImages();
 
-  // Show thinking
   const assistantEl = appendMessage('assistant', '', true);
   const contentEl = assistantEl.querySelector('.markdown-body');
   showThinking(contentEl);
@@ -434,6 +674,9 @@ async function sendMessage() {
   abortController = new AbortController();
   let fullContent = '';
   const startTime = performance.now();
+
+  // Estimate input tokens for usage tracking
+  const inputTokens = estimateTokens(text) + conversationHistory.reduce((s, m) => s + estimateTokens(m.content), 0);
 
   try {
     const res = await fetch('/api/chat', {
@@ -513,6 +756,10 @@ async function sendMessage() {
 
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
     tokenInfo.textContent = `${elapsed}s`;
+
+    // ── Record usage ──
+    const outputTokens = estimateTokens(fullContent);
+    recordUsage(model, inputTokens, outputTokens, performance.now() - startTime);
 
   } catch (e) {
     hideThinking(contentEl);
