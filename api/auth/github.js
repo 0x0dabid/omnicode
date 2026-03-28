@@ -43,7 +43,7 @@ export default async function handler(req, res) {
 
     // Fetch user profile
     const userRes = await fetch("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      headers: { Authorization: "Bearer " + accessToken, Accept: "application/json" },
     });
     const user = await userRes.json();
     if (user.message) return res.status(400).json({ error: user.message });
@@ -53,7 +53,7 @@ export default async function handler(req, res) {
     if (!email) {
       try {
         const emailRes = await fetch("https://api.github.com/user/emails", {
-          headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+          headers: { Authorization: "Bearer " + accessToken, Accept: "application/json" },
         });
         const emails = await emailRes.json();
         const primary = emails.find(e => e.primary);
@@ -69,11 +69,11 @@ export default async function handler(req, res) {
       avatar: user.avatar_url,
     });
 
-    const origin = req.headers.origin || req.headers.referer?.split("/api")[0] || "";
-    const redirectBase = origin || `https://${req.headers.host}`;
+    const origin = req.headers.origin || (req.headers.referer ? req.headers.referer.split("/api")[0] : "");
+    const redirectBase = origin || "https://" + req.headers.host;
     const encoded = Buffer.from(userData).toString("base64url");
 
-    res.setHeader("Location", `${redirectBase}/?auth=${encoded}&gh_token=${accessToken}`);
+    res.setHeader("Location", redirectBase + "/?auth=" + encoded + "&gh_token=" + accessToken);
     return res.status(302).end();
 
   } catch (e) {
