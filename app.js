@@ -115,25 +115,8 @@ function setupAuth() {
 }
 
 function triggerGitHubLogin() {
-  // Redirect to GitHub OAuth authorize URL
-  // The client_id is fetched from our own API to keep it server-side
-  fetch('/api/auth/github/client')
-    .then(r => r.json())
-    .then(data => {
-      if (data.client_id) {
-        const redirectUri = `${window.location.origin}/api/auth/github`;
-        const url = `https://github.com/login/oauth/authorize?client_id=${data.client_id}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=read:user%20user:email`;
-        window.location.href = url;
-      } else {
-        flashAuthStatus(data.error || 'GitHub OAuth not configured. Set GITHUB_CLIENT_ID env var on Vercel.');
-      }
-    })
-    .catch(() => {
-      // Fallback: try direct redirect
-      const redirectUri = `${window.location.origin}/api/auth/github`;
-      const url = `https://github.com/login/oauth/authorize?client_id=&redirect_uri=${encodeURIComponent(redirectUri)}&scope=read:user%20user:email`;
-      flashAuthStatus('Could not reach auth endpoint. Check your deployment.');
-    });
+  // Redirect to our serverless function which handles the GitHub OAuth flow
+  window.location.href = '/api/auth/login';
 }
 
 function showApp(user) {

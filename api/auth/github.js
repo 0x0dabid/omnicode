@@ -1,9 +1,6 @@
 /**
- * GitHub OAuth handler for OmniCode
- *
- * Routes:
- *   GET /api/auth/github?code=XXX   -- OAuth callback, exchanges code for token + user info
- *   GET /api/auth/github/client      -- Returns { client_id } so frontend can build authorize URL
+ * GitHub OAuth callback handler for OmniCode
+ * GET /api/auth/github?code=XXX  -- exchanges code for token, fetches user, redirects back to app
  *
  * Requires env vars on Vercel:
  *   GITHUB_CLIENT_ID
@@ -11,34 +8,19 @@
  */
 
 export default async function handler(req, res) {
-  // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
-
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   const clientId = process.env.GITHUB_CLIENT_ID;
   const clientSecret = process.env.GITHUB_CLIENT_SECRET;
 
-  // Route: /api/auth/github/client -- return client_id for frontend
-  if (req.url.includes("/client")) {
-    if (!clientId) {
-      return res.status(200).json({ error: "GITHUB_CLIENT_ID not set. Configure it in Vercel env vars.", client_id: null });
-    }
-    return res.status(200).json({ client_id: clientId });
-  }
-
-  // Route: /api/auth/github?code=XXX -- OAuth callback
   const { code } = req.query;
-  if (!code) {
-    return res.status(400).json({ error: "Missing code parameter" });
-  }
+  if (!code) return res.status(400).json({ error: "Missing code parameter" });
 
   if (!clientId || !clientSecret) {
     return res.status(500).json({
-      error: "GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET env vars on Vercel.",
+      error: "GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET env vars.",
     });
   }
 
