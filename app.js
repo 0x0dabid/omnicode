@@ -115,6 +115,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 function setupAuth() {
   const params = new URLSearchParams(window.location.search);
   const authParam = params.get('auth');
+  const ghTokenParam = params.get('gh_token');
+
+  // Save GitHub token if provided (from OAuth callback)
+  if (ghTokenParam) {
+    setGhToken(ghTokenParam);
+  }
+
   if (authParam) {
     try {
       const json = atob(authParam.replace(/-/g, '+').replace(/_/g, '/'));
@@ -146,7 +153,9 @@ function showApp(user) {
 
 function doLogout() {
   currentUser = null;
+  ghToken = null;
   localStorage.removeItem('omnicode_user');
+  localStorage.removeItem('omnicode_gh_token');
   userDropdown.classList.add('hidden');
   authWall.classList.remove('hidden');
 }
@@ -861,10 +870,9 @@ let currentFileSha = null;
 
 function getGhToken() {
   if (ghToken) return ghToken;
-  // Use GitHub token from settings or from OAuth session
+  // Use GitHub token from OAuth login or manually entered PAT
   const stored = localStorage.getItem('omnicode_gh_token');
   if (stored) { ghToken = stored; return stored; }
-  // If no PAT, prompt for one
   return null;
 }
 
@@ -878,10 +886,10 @@ async function loadRepos() {
   if (!token) {
     repoContent.innerHTML = `
       <div class="px-3 py-4 text-center space-y-3">
-        <p class="text-xs text-[var(--text-muted)]">Enter a GitHub Personal Access Token to browse your repos</p>
+        <p class="text-xs text-[var(--text-muted)]">No GitHub token found. Sign in with GitHub above, or enter a Personal Access Token:</p>
         <input id="ghTokenInput" type="password" placeholder="ghp_xxxxx..." class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]">
         <button onclick="connectGithub()" class="w-full bg-[var(--accent)] hover:opacity-80 text-white text-xs px-3 py-2 rounded-lg">Connect</button>
-        <p class="text-[10px] text-[var(--text-muted)]">Needs <code>repo</code> scope. Create one at github.com/settings/tokens</p>
+        <p class="text-[10px] text-[var(--text-muted)]">Needs <code>repo</code> scope. Create at github.com/settings/tokens</p>
       </div>`;
     return;
   }

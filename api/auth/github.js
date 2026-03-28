@@ -1,6 +1,8 @@
 /**
  * GitHub OAuth callback handler for OmniCode
- * GET /api/auth/github?code=XXX  -- exchanges code for token, fetches user, redirects back to app
+ * GET /api/auth/github?code=XXX
+ *
+ * Exchanges code for token, fetches user, redirects back with user data + gh_token
  *
  * Requires env vars on Vercel:
  *   GITHUB_CLIENT_ID
@@ -71,7 +73,7 @@ export default async function handler(req, res) {
     const redirectBase = origin || `https://${req.headers.host}`;
     const encoded = Buffer.from(userData).toString("base64url");
 
-    res.setHeader("Location", `${redirectBase}/?auth=${encoded}`);
+    res.setHeader("Location", `${redirectBase}/?auth=${encoded}&gh_token=${accessToken}`);
     return res.status(302).end();
 
   } catch (e) {
