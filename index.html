@@ -20,18 +20,15 @@
       <span class="text-xs text-[var(--text-muted)] ml-1">Multi-LLM Coding Assistant</span>
     </div>
     <div class="flex items-center gap-3">
-      <!-- Model Selector -->
       <select id="modelSelect" class="bg-[var(--bg-input)] border border-[var(--border)] text-sm rounded-lg px-3 py-1.5 text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer">
         <option disabled selected>Loading models...</option>
       </select>
-      <!-- Preview toggle -->
       <button id="previewToggleBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors hidden" title="Toggle Preview">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
         </svg>
       </button>
-      <!-- Theme toggle -->
       <button id="themeBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="Toggle theme">
         <svg id="themeIconDark" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
@@ -40,14 +37,12 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
         </svg>
       </button>
-      <!-- Settings toggle -->
       <button id="settingsBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="API Settings">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
         </svg>
       </button>
-      <!-- New Chat -->
       <button id="newChatBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="New Chat">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -89,23 +84,22 @@
     <div id="chatPanel" class="flex-1 flex flex-col overflow-hidden transition-all duration-300">
       <main id="chatArea" class="flex-1 overflow-y-auto px-4 py-6">
         <div id="messageContainer" class="max-w-3xl mx-auto space-y-4">
-          <!-- Welcome message -->
           <div class="text-center py-12">
             <div class="text-5xl mb-4">&lt;/&gt;</div>
             <h2 class="text-2xl font-bold text-[var(--text-primary)] mb-2">Welcome to OmniCode</h2>
             <p class="text-[var(--text-muted)] mb-6">Your multi-LLM coding assistant. Select a model, configure your API key, and start building.</p>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-xl mx-auto text-sm">
-              <button onclick="insertPrompt('Write a simple HTML page with CSS that shows a animated gradient background')"
+              <button onclick="insertPrompt('Build a complete todo app with HTML, CSS and JavaScript. Include add, delete, mark complete, filter by status, and local storage persistence.')"
                       class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
-                Build a webpage
+                Build a todo app
+              </button>
+              <button onclick="insertPrompt('Create a Snake game with HTML Canvas. Include score tracking, game over screen, and restart button.')"
+                      class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
+                Build a Snake game
               </button>
               <button onclick="insertPrompt('Debug this code and explain the fix:')"
                       class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
                 Debug my code
-              </button>
-              <button onclick="insertPrompt('Explain how async/await works in JavaScript')"
-                      class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
-                Explain a concept
               </button>
             </div>
           </div>
@@ -115,12 +109,21 @@
       <!-- Input Area -->
       <footer class="shrink-0 bg-[var(--bg-secondary)] border-t border-[var(--border)] px-4 py-3">
         <div class="max-w-3xl mx-auto">
+          <!-- Image preview strip -->
+          <div id="imagePreviewStrip" class="hidden flex gap-2 mb-2 flex-wrap"></div>
           <div class="flex gap-2 items-end">
             <div class="flex-1 relative">
               <textarea id="chatInput"
                         rows="1"
-                        placeholder="Ask me to code anything... (Enter to send, Shift+Enter for newline)"
-                        class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-xl px-4 py-3 pr-12 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)] max-h-40 overflow-y-auto"></textarea>
+                        placeholder="Ask me to code anything... Paste images with Ctrl+V (Enter to send, Shift+Enter for newline)"
+                        class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-xl px-4 py-3 pr-20 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)] max-h-40 overflow-y-auto"></textarea>
+              <!-- Image upload button -->
+              <button id="imageUploadBtn" class="absolute right-10 bottom-2 text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="Upload image">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+              </button>
+              <input type="file" id="imageFileInput" accept="image/*" class="hidden" multiple>
               <button id="stopBtn" class="hidden absolute right-2 bottom-2 bg-red-600 hover:bg-red-500 text-white rounded-lg p-1.5 transition-colors" title="Stop generation">
                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
               </button>
@@ -140,10 +143,13 @@
       </footer>
     </div>
 
-    <!-- Preview Panel (hidden by default) -->
+    <!-- Preview Panel -->
     <div id="previewPanel" class="hidden flex-col border-l border-[var(--border)] bg-[var(--bg-primary)]" style="width:50%">
       <div class="flex items-center justify-between px-3 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border)]">
-        <span class="text-xs font-medium text-[var(--text-muted)]">LIVE PREVIEW</span>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-medium text-[var(--text-muted)]">LIVE PREVIEW</span>
+          <span id="previewFileName" class="text-xs text-[var(--accent)] hidden"></span>
+        </div>
         <div class="flex items-center gap-2">
           <button id="previewRefreshBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="Refresh preview">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
