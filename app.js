@@ -1,12 +1,22 @@
 /**
  * OmniCode — Frontend Application
+ * + Typewriter effect for AI responses
+ * + Multi-theme support
  */
+
+// ── Themes ─────────────────────────────────────────────────────────────
+const THEMES = [
+  { id: 'dark',     name: 'Dark',     dot: '#10b981' },
+  { id: 'midnight', name: 'Midnight', dot: '#818cf8' },
+  { id: 'ocean',    name: 'Ocean',    dot: '#38bdf8' },
+];
 
 // ── State ──────────────────────────────────────────────────────────────
 let conversationHistory = [];
 let isStreaming = false;
 let abortController = null;
 let models = [];
+let typewriterTimer = null;
 
 // ── DOM refs ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -26,15 +36,58 @@ const stopBtn        = $('#stopBtn');
 const newChatBtn     = $('#newChatBtn');
 const statusText     = $('#statusText');
 const tokenInfo      = $('#tokenInfo');
+const themeBtn       = $('#themeBtn');
+const themeIconDark  = $('#themeIconDark');
+const themeIconLight = $('#themeIconLight');
 
 // ── Initialize ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  loadTheme();
   loadSettings();
   await loadModels();
   setupListeners();
   chatInput.focus();
 });
 
+// ── Theme ──────────────────────────────────────────────────────────────
+function loadTheme() {
+  const saved = localStorage.getItem('omnicode_theme') || 'dark';
+  applyTheme(saved);
+}
+
+function applyTheme(themeId) {
+  document.documentElement.setAttribute('data-theme', themeId);
+  localStorage.setItem('omnicode_theme', themeId);
+
+  // Toggle sun/moon icon
+  if (themeId === 'dark' || themeId === 'midnight' || themeId === 'ocean') {
+    themeIconDark.classList.remove('hidden');
+    themeIconLight.classList.add('hidden');
+  }
+}
+
+function toggleThemeMenu() {
+  let menu = document.querySelector('.theme-menu');
+  if (menu) { menu.remove(); return; }
+
+  menu = document.createElement('div');
+  menu.className = 'theme-menu';
+
+  const current = localStorage.getItem('omnicode_theme') || 'dark';
+
+  THEMES.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = t.id === current ? 'active' : '';
+    btn.innerHTML = `<span class="theme-dot" style="background:${t.dot}"></span> ${t.name}`;
+    btn.onclick = () => { applyTheme(t.id); menu.remove(); };
+    menu.appendChild(btn);
+  });
+
+  themeBtn.style.position = 'relative';
+  themeBtn.appendChild(menu);
+}
+
+// ── Models ─────────────────────────────────────────────────────────────
 async function loadModels() {
   try {
     const res = await fetch('/api/models');
@@ -58,7 +111,6 @@ async function loadModels() {
       currentGroup.appendChild(opt);
     });
 
-    // Restore saved model
     const saved = localStorage.getItem('omnicode_model');
     if (saved) modelSelect.value = saved;
   } catch (e) {
@@ -70,10 +122,7 @@ function loadSettings() {
   apiKeyInput.value = localStorage.getItem('omnicode_api_key') || '';
   apiBaseInput.value = localStorage.getItem('omnicode_api_base') || '';
   const temp = localStorage.getItem('omnicode_temperature');
-  if (temp) {
-    tempInput.value = temp;
-    tempValue.textContent = temp;
-  }
+  if (temp) { tempInput.value = temp; tempValue.textContent = temp; }
   const savedModel = localStorage.getItem('omnicode_model');
   if (savedModel) modelSelect.value = savedModel;
 }
@@ -88,29 +137,18 @@ function saveSettings() {
 }
 
 function setupListeners() {
-  // Settings
   settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('hidden'));
   saveSettingsBtn.addEventListener('click', saveSettings);
   tempInput.addEventListener('input', () => tempValue.textContent = tempInput.value);
-
-  // Model change
-  modelSelect.addEventListener('change', () => {
-    localStorage.setItem('omnicode_model', modelSelect.value);
-  });
-
-  // Chat input
+  modelSelect.addEventListener('change', () => localStorage.setItem('omnicode_model', modelSelect.value));
   chatInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   });
   chatInput.addEventListener('input', autoResize);
-
-  // Buttons
   sendBtn.addEventListener('click', sendMessage);
   stopBtn.addEventListener('click', stopGeneration);
   newChatBtn.addEventListener('click', newChat);
+  themeBtn.addEventListener('click', toggleThemeMenu);
 }
 
 function autoResize() {
@@ -137,35 +175,26 @@ async function sendMessage() {
     return;
   }
 
-  // Clear welcome message on first send
   const welcome = messageContainer.querySelector('.text-center');
   if (welcome) welcome.remove();
 
-  // Add user message
   conversationHistory.push({ role: 'user', content: text });
   appendMessage('user', text);
 
-  // Clear input
   chatInput.value = '';
   chatInput.style.height = 'auto';
 
-  // Show assistant message placeholder
   const assistantEl = appendMessage('assistant', '', true);
   const contentEl = assistantEl.querySelector('.markdown-body');
   contentEl.classList.add('typing-cursor');
 
-  // UI state
   setStreaming(true);
   statusText.textContent = 'Thinking...';
 
-  // Get selected model info
-  const selectedOption = modelSelect.options[modelSelect.selectedIndex];
-  const provider = selectedOption?.dataset?.provider || '';
   const model = modelSelect.value;
   const apiBase = apiBaseInput.value.trim() || localStorage.getItem('omnicode_api_base') || null;
   const temperature = parseFloat(tempInput.value);
 
-  // Stream response
   abortController = new AbortController();
   let fullContent = '';
   const startTime = performance.now();
@@ -174,13 +203,7 @@ async function sendMessage() {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: conversationHistory,
-        api_key: apiKey,
-        api_base: apiBase,
-        temperature,
-      }),
+      body: JSON.stringify({ model, messages: conversationHistory, api_key: apiKey, api_base: apiBase, temperature }),
       signal: abortController.signal,
     });
 
@@ -191,10 +214,7 @@ async function sendMessage() {
       contentEl.innerHTML = `<span class="text-red-400">Error: ${escapeHtml(data.error)}</span>`;
     } else if (data.content) {
       fullContent = data.content;
-      contentEl.classList.remove('typing-cursor');
-      renderMarkdown(contentEl, fullContent);
-      addCopyButtons(contentEl);
-      scrollToBottom();
+      await typewriterEffect(contentEl, fullContent);
     }
 
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
@@ -209,7 +229,6 @@ async function sendMessage() {
     }
   }
 
-  // Finalize
   contentEl.classList.remove('typing-cursor');
   if (fullContent) {
     conversationHistory.push({ role: 'assistant', content: fullContent });
@@ -222,19 +241,63 @@ async function sendMessage() {
   scrollToBottom();
 }
 
+// ── Typewriter Effect ──────────────────────────────────────────────────
+function typewriterEffect(el, text) {
+  return new Promise((resolve) => {
+    const speed = 8; // ms per character — smooth reading pace
+    let i = 0;
+    let buffer = '';
+    let inCodeBlock = false;
+    let tagDepth = 0;
+
+    // We'll show raw text progressively, then re-render markdown every few chars
+    let displayed = '';
+    let lastRender = 0;
+    const renderInterval = 50; // re-render markdown every 50ms
+
+    function tick() {
+      if (i >= text.length) {
+        // Final render
+        renderMarkdown(el, text);
+        addCopyButtons(el);
+        scrollToBottom();
+        resolve();
+        return;
+      }
+
+      // Add characters in small chunks for speed
+      const chunkSize = Math.max(1, Math.floor(3 + text.length / 2000));
+      const end = Math.min(i + chunkSize, text.length);
+      displayed = text.slice(0, end);
+      i = end;
+
+      // Re-render markdown periodically
+      const now = performance.now();
+      if (now - lastRender > renderInterval) {
+        renderMarkdown(el, displayed);
+        scrollToBottom();
+        lastRender = now;
+      }
+
+      typewriterTimer = setTimeout(tick, speed);
+    }
+
+    tick();
+  });
+}
+
 function stopGeneration() {
+  if (typewriterTimer) { clearTimeout(typewriterTimer); typewriterTimer = null; }
   if (abortController) abortController.abort();
 }
 
 function newChat() {
   conversationHistory = [];
-  messageContainer.innerHTML = '';
-  // Re-add welcome
   messageContainer.innerHTML = `
     <div class="text-center py-12">
       <div class="text-5xl mb-4">&lt;/&gt;</div>
-      <h2 class="text-2xl font-bold text-white mb-2">Welcome to OmniCode</h2>
-      <p class="text-gray-400">Start a new conversation. Select your model and go.</p>
+      <h2 class="text-2xl font-bold text-[var(--text-primary)] mb-2">Welcome to OmniCode</h2>
+      <p class="text-[var(--text-muted)]">Start a new conversation. Select your model and go.</p>
     </div>
   `;
   chatInput.focus();
@@ -248,15 +311,15 @@ function appendMessage(role, content, isStreaming = false) {
 
   if (role === 'user') {
     div.innerHTML = `
-      <div class="max-w-[85%] bg-emerald-600/20 border border-emerald-500/30 rounded-2xl rounded-br-sm px-4 py-2.5 text-sm text-gray-100">
+      <div class="max-w-[85%] bg-[var(--accent-dim)] border border-[var(--accent-border)] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm text-[var(--text-primary)]">
         ${escapeHtml(content)}
       </div>
     `;
   } else {
     div.innerHTML = `
-      <div class="shrink-0 w-8 h-8 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center text-emerald-400 font-bold text-xs">&lt;/&gt;</div>
+      <div class="shrink-0 w-8 h-8 rounded-lg bg-[var(--bg-input)] border border-[var(--border)] flex items-center justify-center text-[var(--accent)] font-bold text-xs">&lt;/&gt;</div>
       <div class="flex-1 min-w-0">
-        <div class="markdown-body text-sm text-gray-200 leading-relaxed">${isStreaming ? '' : renderMd(content)}</div>
+        <div class="markdown-body text-sm text-[var(--text-primary)] leading-relaxed">${isStreaming ? '' : renderMd(content)}</div>
       </div>
     `;
   }
@@ -311,12 +374,10 @@ function setStreaming(val) {
   sendBtn.classList.toggle('hidden', val);
   stopBtn.classList.toggle('hidden', !val);
   chatInput.disabled = val;
-  statusText.textContent = val ? 'Streaming...' : 'Ready';
+  statusText.textContent = val ? 'Typing...' : 'Ready';
 }
 
 function flashStatus(msg) {
   statusText.textContent = msg;
-  setTimeout(() => {
-    if (!isStreaming) statusText.textContent = 'Ready';
-  }, 2000);
+  setTimeout(() => { if (!isStreaming) statusText.textContent = 'Ready'; }, 2000);
 }

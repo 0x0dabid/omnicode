@@ -1,38 +1,47 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en" class="h-full" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OmniCode — Multi-LLM Coding Assistant</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
 </head>
-<body class="h-full bg-gray-950 text-gray-100 flex flex-col">
+<body class="h-full bg-[var(--bg-primary)] text-[var(--text-primary)] flex flex-col transition-colors duration-300">
 
   <!-- Top Bar -->
-  <header class="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800 shrink-0">
+  <header class="flex items-center justify-between px-4 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border)] shrink-0">
     <div class="flex items-center gap-2">
-      <span class="text-xl font-bold text-emerald-400 tracking-tight">&lt;/&gt;</span>
-      <h1 class="text-lg font-semibold text-white">OmniCode</h1>
-      <span class="text-xs text-gray-500 ml-1">Multi-LLM Coding Assistant</span>
+      <span class="text-xl font-bold text-[var(--accent)] tracking-tight">&lt;/&gt;</span>
+      <h1 class="text-lg font-semibold text-[var(--text-primary)]">OmniCode</h1>
+      <span class="text-xs text-[var(--text-muted)] ml-1">Multi-LLM Coding Assistant</span>
     </div>
     <div class="flex items-center gap-3">
       <!-- Model Selector -->
-      <select id="modelSelect" class="bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-1.5 text-gray-200 focus:outline-none focus:border-emerald-500 cursor-pointer">
+      <select id="modelSelect" class="bg-[var(--bg-input)] border border-[var(--border)] text-sm rounded-lg px-3 py-1.5 text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer">
         <option disabled selected>Loading models...</option>
       </select>
+      <!-- Theme toggle -->
+      <button id="themeBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="Toggle theme">
+        <svg id="themeIconDark" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+        </svg>
+        <svg id="themeIconLight" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+        </svg>
+      </button>
       <!-- Settings toggle -->
-      <button id="settingsBtn" class="text-gray-400 hover:text-emerald-400 transition-colors" title="API Settings">
+      <button id="settingsBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="API Settings">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
         </svg>
       </button>
       <!-- New Chat -->
-      <button id="newChatBtn" class="text-gray-400 hover:text-emerald-400 transition-colors" title="New Chat">
+      <button id="newChatBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="New Chat">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
         </svg>
@@ -41,27 +50,27 @@
   </header>
 
   <!-- Settings Panel (hidden by default) -->
-  <div id="settingsPanel" class="hidden bg-gray-900 border-b border-gray-800 px-4 py-3 shrink-0">
+  <div id="settingsPanel" class="hidden bg-[var(--bg-secondary)] border-b border-[var(--border)] px-4 py-3 shrink-0">
     <div class="max-w-2xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-3">
       <div>
-        <label class="block text-xs text-gray-400 mb-1">API Key</label>
+        <label class="block text-xs text-[var(--text-muted)] mb-1">API Key</label>
         <input id="apiKeyInput" type="password" placeholder="sk-..."
-               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-emerald-500">
+               class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]">
       </div>
       <div>
-        <label class="block text-xs text-gray-400 mb-1">Custom API Base (optional)</label>
+        <label class="block text-xs text-[var(--text-muted)] mb-1">Custom API Base (optional)</label>
         <input id="apiBaseInput" type="text" placeholder="https://api.openai.com/v1"
-               class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:border-emerald-500">
+               class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]">
       </div>
       <div>
-        <label class="block text-xs text-gray-400 mb-1">Temperature</label>
+        <label class="block text-xs text-[var(--text-muted)] mb-1">Temperature</label>
         <input id="tempInput" type="range" min="0" max="2" step="0.1" value="0.7"
-               class="w-full mt-1 accent-emerald-500">
-        <span id="tempValue" class="text-xs text-gray-500">0.7</span>
+               class="w-full mt-1 accent-[var(--accent)]">
+        <span id="tempValue" class="text-xs text-[var(--text-muted)]">0.7</span>
       </div>
     </div>
     <div class="flex justify-end mt-2">
-      <button id="saveSettingsBtn" class="bg-emerald-600 hover:bg-emerald-500 text-sm px-4 py-1.5 rounded-lg transition-colors">
+      <button id="saveSettingsBtn" class="bg-[var(--accent)] hover:opacity-80 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
         Save
       </button>
     </div>
@@ -73,19 +82,19 @@
       <!-- Welcome message -->
       <div class="text-center py-12">
         <div class="text-5xl mb-4">&lt;/&gt;</div>
-        <h2 class="text-2xl font-bold text-white mb-2">Welcome to OmniCode</h2>
-        <p class="text-gray-400 mb-6">Your multi-LLM coding assistant. Select a model, configure your API key, and start building.</p>
+        <h2 class="text-2xl font-bold text-[var(--text-primary)] mb-2">Welcome to OmniCode</h2>
+        <p class="text-[var(--text-muted)] mb-6">Your multi-LLM coding assistant. Select a model, configure your API key, and start building.</p>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-xl mx-auto text-sm">
           <button onclick="insertPrompt('Write a Python Flask REST API with CRUD operations')"
-                  class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-3 text-gray-300 hover:border-emerald-500/50 hover:text-emerald-400 transition-all">
+                  class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
             Write a Flask REST API
           </button>
           <button onclick="insertPrompt('Debug this code and explain the fix:')"
-                  class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-3 text-gray-300 hover:border-emerald-500/50 hover:text-emerald-400 transition-all">
+                  class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
             Debug my code
           </button>
           <button onclick="insertPrompt('Explain how async/await works in JavaScript')"
-                  class="bg-gray-800/50 border border-gray-700/50 rounded-xl p-3 text-gray-300 hover:border-emerald-500/50 hover:text-emerald-400 transition-all">
+                  class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
             Explain a concept
           </button>
         </div>
@@ -94,19 +103,19 @@
   </main>
 
   <!-- Input Area -->
-  <footer class="shrink-0 bg-gray-900 border-t border-gray-800 px-4 py-3">
+  <footer class="shrink-0 bg-[var(--bg-secondary)] border-t border-[var(--border)] px-4 py-3">
     <div class="max-w-3xl mx-auto">
       <div class="flex gap-2 items-end">
         <div class="flex-1 relative">
           <textarea id="chatInput"
                     rows="1"
                     placeholder="Ask me to code anything... (Enter to send, Shift+Enter for newline)"
-                    class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 pr-12 text-sm text-gray-200 resize-none focus:outline-none focus:border-emerald-500 max-h-40 overflow-y-auto"></textarea>
+                    class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-xl px-4 py-3 pr-12 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)] max-h-40 overflow-y-auto"></textarea>
           <button id="stopBtn" class="hidden absolute right-2 bottom-2 bg-red-600 hover:bg-red-500 text-white rounded-lg p-1.5 transition-colors" title="Stop generation">
             <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
           </button>
         </div>
-        <button id="sendBtn" class="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors flex items-center gap-2">
+        <button id="sendBtn" class="bg-[var(--accent)] hover:opacity-80 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors flex items-center gap-2">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
           </svg>
@@ -114,8 +123,8 @@
         </button>
       </div>
       <div class="flex justify-between mt-1">
-        <span id="statusText" class="text-xs text-gray-600">Ready</span>
-        <span id="tokenInfo" class="text-xs text-gray-600"></span>
+        <span id="statusText" class="text-xs text-[var(--text-muted)]">Ready</span>
+        <span id="tokenInfo" class="text-xs text-[var(--text-muted)]"></span>
       </div>
     </div>
   </footer>
