@@ -58,11 +58,11 @@ function getProviderConfig(modelId, apiKey, apiBase) {
     };
   }
 
-  // Zhipu AI (GLM models)
+  // Zhipu AI via z.ai (GLM models)
   if (modelId.startsWith("glm")) {
     return {
       apiKey,
-      baseURL: "https://open.bigmodel.cn/api/paas/v4",
+      baseURL: "https://api.z.ai/api/paas/v4",
       model: modelId,
     };
   }
