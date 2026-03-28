@@ -20,6 +20,7 @@ export default async function handler(req, res) {
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek R1", provider: "deepseek" },
     { id: "groq/llama-3.3-70b-versatile", name: "Llama 3.3 70B (Groq)", provider: "groq" },
     { id: "openrouter/meta-llama/llama-3.1-405b-instruct", name: "Llama 3.1 405B (OpenRouter)", provider: "openrouter" },
+    { id: "glm-5.1", name: "GLM 5.1", provider: "zhipu" },
     { id: "glm-5", name: "GLM 5", provider: "zhipu" },
     { id: "glm-5-turbo", name: "GLM 5 Turbo", provider: "zhipu" },
     { id: "glm-4.7", name: "GLM 4.7", provider: "zhipu" },
