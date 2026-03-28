@@ -1,10 +1,11 @@
 node_modules/
 .vercel/
+.venv/
 __pycache__/
 *.pyc
 .env
-.venv/
 static/
 public/
 main.py
 requirements.txt
+*.py
