@@ -1,16 +1,13 @@
-"""
-POST /api/chat — Stream chat completion via litellm.
-Vercel Serverless Function (Python).
-"""
-
-import json
+from __future__ import annotations
 
 
 def handler(request):
-    """Vercel serverless function handler."""
+    import json
+    import litellm
+
     try:
         body = json.loads(request.get("body", "{}"))
-    except (json.JSONDecodeError, TypeError):
+    except Exception:
         body = {}
 
     model = body.get("model", "gpt-4o-mini")
@@ -32,21 +29,14 @@ def handler(request):
             "body": json.dumps({"error": "Messages are required"}),
         }
 
-    # Lazy import litellm so Vercel can parse this file at build time
-    import litellm
+    system_msg = {
+        "role": "system",
+        "content": "You are OmniCode, an expert coding assistant. You help users write, debug, explain, and refactor code. Always format code with proper markdown code blocks including the language identifier. Be concise but thorough.",
+    }
 
-    SYSTEM_PROMPT = (
-        "You are OmniCode, an expert coding assistant. "
-        "You help users write, debug, explain, and refactor code. "
-        "Always format code with proper markdown code blocks including "
-        "the language identifier. Be concise but thorough."
-    )
-
-    # Prepend system message
     if messages[0].get("role") != "system":
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+        messages = [system_msg] + messages
 
-    # Build kwargs
     kwargs = {
         "model": model,
         "messages": messages,
@@ -59,13 +49,9 @@ def handler(request):
     try:
         response = litellm.completion(stream=False, **kwargs)
         content = response.choices[0].message.content or ""
-
         return {
             "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Cache-Control": "no-cache",
-            },
+            "headers": {"Content-Type": "application/json", "Cache-Control": "no-cache"},
             "body": json.dumps({"content": content}),
         }
     except Exception as e:
