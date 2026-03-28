@@ -1,0 +1,8 @@
+node_modules/
+.vercel/
+__pycache__/
+*.pyc
+.env
+.venv/
+static/
+main.py
