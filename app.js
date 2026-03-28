@@ -145,11 +145,10 @@ function flashAuthStatus(msg) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// ── USAGE MONITOR ─────────────────────────────────────────────────────
+// ── USAGE MONITOR (Live Z.ai + Local Tracking) ───────────────────────
 // ════════════════════════════════════════════════════════════════════════
 
 const USAGE_KEY = 'omnicode_usage_log';
-const USAGE_START_KEY = 'omnicode_usage_start';
 
 function getUsageLog() {
   return JSON.parse(localStorage.getItem(USAGE_KEY) || '[]');
@@ -157,20 +156,11 @@ function getUsageLog() {
 
 function saveUsageLog(log) {
   localStorage.setItem(USAGE_KEY, JSON.stringify(log));
-  if (!localStorage.getItem(USAGE_START_KEY)) {
-    localStorage.setItem(USAGE_START_KEY, new Date().toISOString());
-  }
 }
 
 function recordUsage(model, inputTokens, outputTokens, elapsedMs) {
   const log = getUsageLog();
-  log.push({
-    ts: Date.now(),
-    model,
-    inTokens: inputTokens || 0,
-    outTokens: outputTokens || 0,
-    elapsed: elapsedMs || 0,
-  });
+  log.push({ ts: Date.now(), model, inTokens: inputTokens || 0, outTokens: outputTokens || 0, elapsed: elapsedMs || 0 });
   saveUsageLog(log);
 }
 
@@ -179,104 +169,184 @@ function estimateTokens(text) {
   return Math.ceil(text.length / 4);
 }
 
-function renderUsage() {
+async function renderUsage() {
   const log = getUsageLog();
   const now = Date.now();
   const fiveHours = 5 * 60 * 60 * 1000;
+  const apiKey = localStorage.getItem('omnicode_api_key') || '';
 
-  // Totals
-  const totalReq = log.length;
-  const totalTokens = log.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-  const totalCost = (totalTokens / 1_000_000 * 0.15).toFixed(2);
+  // Default monthly quota for GLM Coding Plan (adjust if needed)
+  const MONTHLY_QUOTA = 2_000_000; // 2M tokens/month estimate
+
+  // Try to fetch live Z.ai data
+  let live = null;
+  if (apiKey) {
+    try {
+      const res = await fetch('/api/usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey }),
+      });
+      live = await res.json();
+    } catch {}
+  }
+
+  const isLive = live && live.live;
+  const liveTag = $('#usageLiveTag');
+  const dataSource = $('#usageDataSource');
+
+  if (isLive) {
+    liveTag.classList.remove('hidden');
+    dataSource.textContent = 'Live from Z.ai API';
+  } else {
+    liveTag.classList.add('hidden');
+    dataSource.textContent = live ? 'Z.ai API unavailable - showing local estimates' : 'Local tracking (set API key for live data)';
+  }
+
+  // ── Parse live data or fall back to local ──
+  let quotaUsed = 0;
+  let quotaTotal = MONTHLY_QUOTA;
+  let balance = '-';
+  let totalReq = log.length;
+  let fiveHTokens = 0;
+  let weekTokens = 0;
+  let dailyData = null;
+
+  if (isLive) {
+    // Try to extract from live response
+    if (live.balance !== null) balance = '¥' + Number(live.balance).toFixed(2);
+    if (live.totalTokens) quotaUsed = live.totalTokens;
+    if (live.totalRequests) totalReq = live.totalRequests;
+    if (live.weeklyTokens) weekTokens = live.weeklyTokens;
+    if (live.fiveHourTokens) fiveHTokens = live.fiveHourTokens;
+    if (live.dailyData) dailyData = live.dailyData;
+
+    // If we got raw data, parse token counts
+    if (quotaUsed === 0 && weekTokens === 0) {
+      // Try to sum from raw response
+      for (const [key, val] of Object.entries(live.raw || {})) {
+        if (val && !val.error && val.data) {
+          if (Array.isArray(val.data)) {
+            const total = val.data.reduce((s, e) => s + (e.usage || e.tokens || e.total_tokens || 0), 0);
+            if (total > quotaUsed) quotaUsed = total;
+          }
+        }
+      }
+    }
+  }
+
+  // Fall back to local log data if live didn't give us numbers
+  if (fiveHTokens === 0) {
+    const fiveHourEntries = log.filter(e => (now - e.ts) < fiveHours);
+    fiveHTokens = fiveHourEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
+  }
+  if (weekTokens === 0) {
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEntries = log.filter(e => e.ts >= weekStart.getTime());
+    weekTokens = weekEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
+  }
+  if (quotaUsed === 0) {
+    quotaUsed = log.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
+  }
+
+  // ── Subscription Card ──
+  const quotaPct = Math.min(100, (quotaUsed / quotaTotal) * 100);
+  $('#usageQuotaPct').textContent = quotaPct.toFixed(1) + '%';
+  $('#usageQuotaBar').style.width = quotaPct + '%';
+  // Color the bar based on usage
+  const barColor = quotaPct > 90 ? '#ef4444' : quotaPct > 70 ? '#f59e0b' : 'var(--accent)';
+  $('#usageQuotaBar').style.background = barColor;
+  $('#usageQuotaUsed').textContent = fmtTok(quotaUsed) + ' tokens used';
+  $('#usageQuotaTotal').textContent = '/ ' + fmtTok(quotaTotal) + ' total';
+  $('#usageBalance').textContent = balance;
   $('#usageTotalReq').textContent = totalReq.toLocaleString();
-  $('#usageTotalTokens').textContent = totalTokens.toLocaleString();
-  $('#usageTotalCost').textContent = '$' + totalCost;
+  $('#usagePlanDetail').textContent = fmtTok(quotaTotal) + ' tokens/month';
 
-  // 5-Hour Window
-  const fiveHourEntries = log.filter(e => (now - e.ts) < fiveHours);
-  const fiveHReq = fiveHourEntries.length;
-  const fiveHTokens = fiveHourEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-  $('#usage5hReq').textContent = fiveHReq;
-  $('#usage5hTokens').textContent = fiveHTokens.toLocaleString();
+  // ── 5-Hour Window ──
+  const fiveHPct = quotaTotal > 0 ? ((fiveHTokens / quotaTotal) * 100) : 0;
+  $('#usage5hPct').textContent = fiveHPct.toFixed(2) + '%';
+  $('#usage5hBar').style.width = Math.min(100, fiveHPct) + '%';
+  $('#usage5hBar').style.background = fiveHPct > 5 ? '#f59e0b' : 'var(--accent)';
+  $('#usage5hTokens').textContent = fmtTok(fiveHTokens);
+  $('#usage5hPctOf').textContent = fiveHPct.toFixed(2) + '% of monthly quota';
 
+  // Hourly breakdown bars
   const hourBuckets = [];
   for (let i = 0; i < 5; i++) {
     const bucketStart = now - (5 - i) * 60 * 60 * 1000;
     const bucketEnd = bucketStart + 60 * 60 * 1000;
-    const entries = fiveHourEntries.filter(e => e.ts >= bucketStart && e.ts < bucketEnd);
+    const entries = log.filter(e => e.ts >= bucketStart && e.ts < bucketEnd);
     const tokens = entries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-    hourBuckets.push({ entries: entries.length, tokens });
+    hourBuckets.push(tokens);
   }
-  const maxBucket = Math.max(1, ...hourBuckets.map(b => b.tokens));
-  const chart5h = $('#usage5hChart');
-  chart5h.innerHTML = hourBuckets.map((b, i) => {
-    const pct = Math.max(2, (b.tokens / maxBucket) * 100);
+  const maxBucket = Math.max(1, ...hourBuckets);
+  $('#usage5hChart').innerHTML = hourBuckets.map(t => {
+    const pct = Math.max(3, (t / maxBucket) * 100);
     return `<div class="flex-1 flex flex-col items-center justify-end h-full">
-      <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${fmtTok(b.tokens)}</span>
-      <div class="w-full rounded-t" style="height:${pct}%;background:var(--accent);min-height:2px;opacity:${0.4 + 0.6 * (b.tokens / maxBucket)}"></div>
+      <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${fmtTok(t)}</span>
+      <div class="w-full rounded-t" style="height:${pct}%;background:var(--accent);min-height:2px;opacity:${0.3 + 0.7*(t/maxBucket)}"></div>
     </div>`;
   }).join('');
   $('#usage5hLabels').innerHTML = [5,4,3,2,1,0].map(h => `<span>${h === 0 ? 'Now' : h + 'h'}</span>`).join('');
 
-  // Weekly
+  // ── Weekly ──
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
-  weekStart.setHours(0,0,0,0);
-  const oneWeek = 7 * 24 * 60 * 60 * 1000;
-  const weekEntries = log.filter(e => e.ts >= weekStart.getTime());
-  const weekReq = weekEntries.length;
-  const weekTokens = weekEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-  const daysActive = Math.max(1, Math.ceil((now - weekStart.getTime()) / (24*60*60*1000)));
-  $('#usageWeekReq').textContent = weekReq;
-  $('#usageWeekTokens').textContent = weekTokens.toLocaleString();
-  $('#usageWeekAvg').textContent = Math.round(weekReq / daysActive);
-
+  weekStart.setHours(0, 0, 0, 0);
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 6);
   $('#usageWeekRange').textContent = fmtDate(weekStart) + ' - ' + fmtDate(weekEnd);
 
+  const weekPct = quotaTotal > 0 ? ((weekTokens / quotaTotal) * 100) : 0;
+  $('#usageWeekPct').textContent = weekPct.toFixed(2) + '%';
+  $('#usageWeekBar').style.width = Math.min(100, weekPct) + '%';
+  $('#usageWeekBar').style.background = weekPct > 25 ? '#f59e0b' : 'var(--accent)';
+  $('#usageWeekTokens').textContent = fmtTok(weekTokens);
+  $('#usageWeekPctOf').textContent = weekPct.toFixed(2) + '% of monthly quota';
+
+  // Daily bars - each bar shows % of daily quota (quotaTotal / 30)
+  const dailyQuota = quotaTotal / 30;
   const dayBuckets = [];
   for (let d = 0; d < 7; d++) {
     const dayStart = new Date(weekStart);
     dayStart.setDate(dayStart.getDate() + d);
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
-    const entries = weekEntries.filter(e => e.ts >= dayStart.getTime() && e.ts < dayEnd.getTime());
+    const entries = log.filter(e => e.ts >= dayStart.getTime() && e.ts < dayEnd.getTime());
     const tokens = entries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-    dayBuckets.push({ entries: entries.length, tokens });
+    dayBuckets.push(tokens);
   }
-  const maxDay = Math.max(1, ...dayBuckets.map(b => b.tokens));
-  const chartWeek = $('#usageWeekChart');
-  chartWeek.innerHTML = dayBuckets.map((b, i) => {
-    const pct = Math.max(2, (b.tokens / maxDay) * 100);
+  const maxDay = Math.max(1, ...dayBuckets);
+  $('#usageWeekChart').innerHTML = dayBuckets.map((t, i) => {
+    const pctOfDaily = dailyQuota > 0 ? ((t / dailyQuota) * 100) : 0;
+    const barPct = Math.min(100, Math.max(3, (t / maxDay) * 100));
     const isToday = (i === (new Date().getDay() + 6) % 7);
+    const color = pctOfDaily > 100 ? '#ef4444' : pctOfDaily > 70 ? '#f59e0b' : isToday ? 'var(--accent)' : 'var(--border)';
     return `<div class="flex-1 flex flex-col items-center justify-end h-full">
-      <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${fmtTok(b.tokens)}</span>
-      <div class="w-full rounded-t" style="height:${pct}%;background:${isToday ? 'var(--accent)' : 'var(--border)'};min-height:2px;${isToday ? 'opacity:1' : 'opacity:0.6'}"></div>
+      <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${pctOfDaily.toFixed(0)}%</span>
+      <div class="w-full rounded-t" style="height:${barPct}%;background:${color};min-height:2px;${isToday ? 'opacity:1' : 'opacity:0.6'}"></div>
     </div>`;
   }).join('');
 
-  // Recent Activity
+  // ── Recent Activity ──
   const recent = log.slice(-10).reverse();
   const recentList = $('#usageRecentList');
   if (recent.length === 0) {
     recentList.innerHTML = '<p class="text-xs text-[var(--text-muted)] text-center py-4">No activity yet</p>';
   } else {
     recentList.innerHTML = recent.map(e => {
-      const ago = timeAgo(e.ts);
       const tokens = e.inTokens + e.outTokens;
       return `<div class="flex items-center justify-between bg-[var(--bg-primary)] rounded-lg px-3 py-2 text-xs">
         <div class="flex items-center gap-2">
           <span class="text-[var(--accent)] font-mono">${e.model || 'unknown'}</span>
           <span class="text-[var(--text-muted)]">${tokens.toLocaleString()} tokens</span>
         </div>
-        <span class="text-[var(--text-muted)]">${ago}</span>
+        <span class="text-[var(--text-muted)]">${timeAgo(e.ts)}</span>
       </div>`;
     }).join('');
   }
-
-  const trackingStart = localStorage.getItem(USAGE_START_KEY);
-  $('#usageTrackingStart').textContent = trackingStart ? fmtDate(new Date(trackingStart)) : '-';
 }
 
 function fmtTok(n) {
@@ -450,13 +520,8 @@ function setupListeners() {
   usageBtn.addEventListener('click', () => { renderUsage(); usageModal.classList.remove('hidden'); });
   usageCloseBtn.addEventListener('click', () => usageModal.classList.add('hidden'));
   usageModal.addEventListener('click', (e) => { if (e.target === usageModal) usageModal.classList.add('hidden'); });
-  usageClearBtn.addEventListener('click', () => {
-    if (confirm('Clear all usage data?')) {
-      localStorage.removeItem(USAGE_KEY);
-      localStorage.removeItem(USAGE_START_KEY);
-      renderUsage();
-    }
-  });
+  const usageRefreshBtn = $('#usageRefreshBtn');
+  if (usageRefreshBtn) usageRefreshBtn.addEventListener('click', () => renderUsage());
 }
 
 function autoResize() {

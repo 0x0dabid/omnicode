@@ -138,6 +138,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
           </svg>
           <h2 class="text-lg font-semibold text-[var(--text-primary)]">Usage Monitor</h2>
+          <span id="usageLiveTag" class="hidden text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full font-bold animate-pulse">LIVE</span>
         </div>
         <button id="usageCloseBtn" class="text-[var(--text-muted)] hover:text-red-400 transition-colors">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,83 +146,116 @@
           </svg>
         </button>
       </div>
-      <div class="px-6 py-4 space-y-6">
+      <div class="px-6 py-4 space-y-5">
+        <!-- Subscription card -->
         <div class="bg-[var(--bg-input)] rounded-xl p-4 border border-[var(--border)]">
           <div class="flex items-center justify-between mb-3">
-            <span class="text-sm font-medium text-[var(--text-primary)]">Z.ai GLM Coding Plan</span>
+            <div>
+              <p class="text-sm font-medium text-[var(--text-primary)]" id="usagePlanName">Z.ai GLM Coding Plan</p>
+              <p class="text-xs text-[var(--text-muted)]" id="usagePlanDetail">-</p>
+            </div>
             <span class="text-xs bg-[var(--accent)]/20 text-[var(--accent)] px-2 py-0.5 rounded-full font-medium">Active</span>
           </div>
-          <div class="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p class="text-2xl font-bold text-[var(--accent)]" id="usageTotalReq">0</p>
-              <p class="text-xs text-[var(--text-muted)]">Total Requests</p>
+          <!-- Overall quota bar -->
+          <div class="mb-2">
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-[var(--text-muted)]">Monthly Quota Used</span>
+              <span class="text-[var(--accent)] font-bold" id="usageQuotaPct">0%</span>
             </div>
-            <div>
-              <p class="text-2xl font-bold text-[var(--accent)]" id="usageTotalTokens">0</p>
-              <p class="text-xs text-[var(--text-muted)]">Total Tokens</p>
+            <div class="w-full h-3 bg-[var(--bg-primary)] rounded-full overflow-hidden">
+              <div id="usageQuotaBar" class="h-full rounded-full transition-all duration-700" style="width:0%;background:var(--accent)"></div>
             </div>
-            <div>
-              <p class="text-2xl font-bold text-[var(--accent)]" id="usageTotalCost">$0.00</p>
-              <p class="text-xs text-[var(--text-muted)]">Est. Cost</p>
+            <div class="flex justify-between text-[10px] text-[var(--text-muted)] mt-1">
+              <span id="usageQuotaUsed">0 tokens used</span>
+              <span id="usageQuotaTotal">/ 0 total</span>
+            </div>
+          </div>
+          <!-- Balance -->
+          <div class="flex gap-3 mt-3 pt-3 border-t border-[var(--border)]">
+            <div class="flex-1 text-center">
+              <p class="text-lg font-bold text-[var(--accent)]" id="usageBalance">-</p>
+              <p class="text-[10px] text-[var(--text-muted)]">Balance</p>
+            </div>
+            <div class="flex-1 text-center">
+              <p class="text-lg font-bold text-[var(--text-primary)]" id="usageTotalReq">0</p>
+              <p class="text-[10px] text-[var(--text-muted)]">Total Requests</p>
             </div>
           </div>
         </div>
+
+        <!-- 5-Hour Window -->
         <div>
-          <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center justify-between mb-2">
             <h3 class="text-sm font-semibold text-[var(--text-primary)]">Last 5 Hours</h3>
             <span class="text-xs text-[var(--text-muted)]" id="usage5hTime">Rolling window</span>
           </div>
           <div class="bg-[var(--bg-input)] rounded-xl p-4 border border-[var(--border)]">
-            <div class="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <p class="text-xs text-[var(--text-muted)]">Requests</p>
-                <p class="text-xl font-bold text-[var(--text-primary)]" id="usage5hReq">0</p>
+            <!-- Percentage bar -->
+            <div class="mb-3">
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-[var(--text-muted)]">Token Usage</span>
+                <span class="font-bold" id="usage5hPct">0%</span>
               </div>
-              <div>
-                <p class="text-xs text-[var(--text-muted)]">Tokens Used</p>
-                <p class="text-xl font-bold text-[var(--text-primary)]" id="usage5hTokens">0</p>
+              <div class="w-full h-2.5 bg-[var(--bg-primary)] rounded-full overflow-hidden">
+                <div id="usage5hBar" class="h-full rounded-full transition-all duration-700" style="width:0%;background:var(--accent)"></div>
               </div>
             </div>
-            <div class="flex items-end gap-1 h-20" id="usage5hChart"></div>
-            <div class="flex justify-between text-[10px] text-[var(--text-muted)] mt-1" id="usage5hLabels"></div>
+            <div class="flex justify-between text-xs text-[var(--text-muted)]">
+              <span><span class="text-[var(--text-primary)] font-semibold" id="usage5hTokens">0</span> tokens</span>
+              <span id="usage5hPctOf">0% of monthly quota</span>
+            </div>
+            <!-- Hourly breakdown -->
+            <div class="mt-3 pt-3 border-t border-[var(--border)]">
+              <p class="text-[10px] text-[var(--text-muted)] mb-1">Hourly Breakdown</p>
+              <div class="flex items-end gap-1 h-16" id="usage5hChart"></div>
+              <div class="flex justify-between text-[10px] text-[var(--text-muted)] mt-1" id="usage5hLabels"></div>
+            </div>
           </div>
         </div>
+
+        <!-- Weekly Usage -->
         <div>
-          <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center justify-between mb-2">
             <h3 class="text-sm font-semibold text-[var(--text-primary)]">Weekly Usage</h3>
             <span class="text-xs text-[var(--text-muted)]" id="usageWeekRange">This week</span>
           </div>
           <div class="bg-[var(--bg-input)] rounded-xl p-4 border border-[var(--border)]">
-            <div class="grid grid-cols-3 gap-4 mb-4">
-              <div>
-                <p class="text-xs text-[var(--text-muted)]">Requests</p>
-                <p class="text-xl font-bold text-[var(--text-primary)]" id="usageWeekReq">0</p>
+            <!-- Percentage bar -->
+            <div class="mb-3">
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-[var(--text-muted)]">Token Usage</span>
+                <span class="font-bold" id="usageWeekPct">0%</span>
               </div>
-              <div>
-                <p class="text-xs text-[var(--text-muted)]">Tokens</p>
-                <p class="text-xl font-bold text-[var(--text-primary)]" id="usageWeekTokens">0</p>
-              </div>
-              <div>
-                <p class="text-xs text-[var(--text-muted)]">Avg / Day</p>
-                <p class="text-xl font-bold text-[var(--text-primary)]" id="usageWeekAvg">0</p>
+              <div class="w-full h-2.5 bg-[var(--bg-primary)] rounded-full overflow-hidden">
+                <div id="usageWeekBar" class="h-full rounded-full transition-all duration-700" style="width:0%;background:var(--accent)"></div>
               </div>
             </div>
-            <div class="flex items-end gap-2 h-24" id="usageWeekChart"></div>
-            <div class="flex justify-between text-[10px] text-[var(--text-muted)] mt-1">
-              <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+            <div class="flex justify-between text-xs text-[var(--text-muted)]">
+              <span><span class="text-[var(--text-primary)] font-semibold" id="usageWeekTokens">0</span> tokens</span>
+              <span id="usageWeekPctOf">0% of monthly quota</span>
+            </div>
+            <!-- Daily bars -->
+            <div class="mt-3 pt-3 border-t border-[var(--border)]">
+              <p class="text-[10px] text-[var(--text-muted)] mb-1">Daily Breakdown (% of daily quota)</p>
+              <div class="flex items-end gap-2 h-20" id="usageWeekChart"></div>
+              <div class="flex justify-between text-[10px] text-[var(--text-muted)] mt-1">
+                <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+              </div>
             </div>
           </div>
         </div>
+
+        <!-- Recent Activity -->
         <div>
-          <h3 class="text-sm font-semibold text-[var(--text-primary)] mb-3">Recent Activity</h3>
-          <div class="space-y-2" id="usageRecentList">
+          <h3 class="text-sm font-semibold text-[var(--text-primary)] mb-2">Recent Activity</h3>
+          <div class="space-y-1.5" id="usageRecentList">
             <p class="text-xs text-[var(--text-muted)] text-center py-4">No activity yet</p>
           </div>
         </div>
       </div>
       <div class="px-6 py-3 border-t border-[var(--border)] flex justify-between items-center">
-        <span class="text-xs text-[var(--text-muted)]">Tracking since: <span id="usageTrackingStart">-</span></span>
-        <button id="usageClearBtn" class="text-xs text-red-400 hover:text-red-300 transition-colors">Clear Data</button>
+        <span class="text-xs text-[var(--text-muted)]" id="usageDataSource">Local tracking</span>
+        <button id="usageRefreshBtn" class="text-xs text-[var(--accent)] hover:underline">Refresh</button>
       </div>
     </div>
   </div>
