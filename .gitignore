@@ -5,4 +5,6 @@ __pycache__/
 .env
 .venv/
 static/
+public/
 main.py
+requirements.txt

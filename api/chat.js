@@ -58,6 +58,15 @@ function getProviderConfig(modelId, apiKey, apiBase) {
     };
   }
 
+  // Zhipu AI (GLM models)
+  if (modelId.startsWith("glm")) {
+    return {
+      apiKey,
+      baseURL: "https://open.bigmodel.cn/api/paas/v4",
+      model: modelId,
+    };
+  }
+
   // OpenAI (default)
   return {
     apiKey,
