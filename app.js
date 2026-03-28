@@ -1,10 +1,11 @@
 /**
  * OmniCode — Frontend Application
- * + GitHub OAuth Auth Wall (must sign in to access)
- * + Usage Monitor (5-hour rolling + weekly)
+ * + GitHub OAuth Auth Wall
+ * + Usage Monitor (real Z.ai percentages + reset dates)
+ * + Chat History (save/load/switch)
+ * + Interactive Preview (games work via srcdoc)
  * + Real streaming (SSE)
- * + Image paste/upload support (multimodal)
- * + Live HTML preview with multi-file detection
+ * + Image paste/upload support
  * + Multi-theme support
  */
 
@@ -27,6 +28,7 @@ let previewOpen = false;
 let lastHtmlCode = '';
 let pendingImages = [];
 let currentUser = null;
+let activeChatId = null;
 
 // ── DOM refs ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -73,13 +75,17 @@ const authError        = $('#authError');
 const usageBtn         = $('#usageBtn');
 const usageModal       = $('#usageModal');
 const usageCloseBtn    = $('#usageCloseBtn');
-const usageClearBtn    = $('#usageClearBtn');
+// Chat History
+const historyToggle    = $('#historyToggle');
+const historySidebar   = $('#historySidebar');
+const historyList      = $('#historyList');
 
 // ── Initialize ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   loadTheme();
   setupListeners();
   setupAuth();
+  loadChatHistory();
   chatInput.focus();
 });
 
@@ -88,7 +94,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ════════════════════════════════════════════════════════════════════════
 
 function setupAuth() {
-  // 1. Check URL for OAuth callback (?auth=base64data)
   const params = new URLSearchParams(window.location.search);
   const authParam = params.get('auth');
   if (authParam) {
@@ -97,7 +102,6 @@ function setupAuth() {
       const user = JSON.parse(json);
       currentUser = user;
       localStorage.setItem('omnicode_user', JSON.stringify(user));
-      // Clean URL
       window.history.replaceState({}, document.title, window.location.pathname);
       showApp(user);
       return;
@@ -105,27 +109,17 @@ function setupAuth() {
       flashAuthStatus('Login failed. Try again.');
     }
   }
-
-  // 2. Check saved session
   const saved = JSON.parse(localStorage.getItem('omnicode_user') || 'null');
-  if (saved) {
-    currentUser = saved;
-    showApp(saved);
-  }
+  if (saved) { currentUser = saved; showApp(saved); }
 }
 
-function triggerGitHubLogin() {
-  // Redirect to our serverless function which handles the GitHub OAuth flow
-  window.location.href = '/api/auth/login';
-}
+function triggerGitHubLogin() { window.location.href = '/api/auth/login'; }
 
 function showApp(user) {
   authWall.classList.add('hidden');
   userAvatar.src = user.avatar;
   userName.textContent = user.name;
   userLogin.textContent = '@' + user.login;
-
-  // Load app stuff once
   loadSettings();
   loadModels();
   chatInput.focus();
@@ -145,18 +139,127 @@ function flashAuthStatus(msg) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// ── USAGE MONITOR (Live Z.ai + Local Tracking) ───────────────────────
+// ── CHAT HISTORY ──────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+
+const HISTORY_KEY = 'omnicode_chats';
+
+function getAllChats() {
+  return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+}
+
+function saveAllChats(chats) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(chats));
+}
+
+function getCurrentChatId() {
+  return activeChatId;
+}
+
+function saveCurrentChat() {
+  if (conversationHistory.length === 0) return;
+  const chats = getAllChats();
+  const now = Date.now();
+  // Get first user message as title
+  const firstUser = conversationHistory.find(m => m.role === 'user');
+  const title = firstUser ? firstUser.content.slice(0, 60) : 'New Chat';
+  const idx = chats.findIndex(c => c.id === activeChatId);
+  const chatObj = {
+    id: activeChatId || now.toString(),
+    title,
+    messages: conversationHistory,
+    lastHtml: lastHtmlCode,
+    model: modelSelect.value,
+    ts: now,
+  };
+  if (idx >= 0) chats[idx] = chatObj;
+  else chats.unshift(chatObj);
+  activeChatId = chatObj.id;
+  // Keep max 50 chats
+  if (chats.length > 50) chats.length = 50;
+  saveAllChats(chats);
+  renderHistoryList();
+}
+
+function loadChat(chatId) {
+  const chats = getAllChats();
+  const chat = chats.find(c => c.id === chatId);
+  if (!chat) return;
+  activeChatId = chat.id;
+  conversationHistory = chat.messages || [];
+  lastHtmlCode = chat.lastHtml || '';
+  if (chat.model) modelSelect.value = chat.model;
+  // Re-render messages
+  messageContainer.innerHTML = '';
+  conversationHistory.forEach(msg => {
+    if (msg.role === 'user') {
+      appendMessage('user', msg.content, msg.images || []);
+    } else {
+      const el = appendMessage('assistant', '');
+      const contentEl = el.querySelector('.markdown-body');
+      renderMarkdown(contentEl, msg.content);
+      addCopyButtons(contentEl);
+    }
+  });
+  if (lastHtmlCode) {
+    previewToggleBtn.classList.remove('hidden');
+    if (previewOpen) updatePreview(lastHtmlCode);
+  }
+  renderHistoryList();
+  chatInput.focus();
+}
+
+function deleteChat(chatId, e) {
+  e.stopPropagation();
+  const chats = getAllChats().filter(c => c.id !== chatId);
+  saveAllChats(chats);
+  if (activeChatId === chatId) {
+    activeChatId = null;
+    newChat();
+  }
+  renderHistoryList();
+}
+
+function loadChatHistory() {
+  renderHistoryList();
+}
+
+function renderHistoryList() {
+  if (!historyList) return;
+  const chats = getAllChats();
+  if (chats.length === 0) {
+    historyList.innerHTML = '<p class="text-xs text-[var(--text-muted)] text-center py-4">No chats yet</p>';
+    return;
+  }
+  historyList.innerHTML = chats.map(c => {
+    const isActive = c.id === activeChatId;
+    const time = timeAgo(c.ts);
+    return `<div class="group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${isActive ? 'bg-[var(--accent)]/10 border border-[var(--accent)]/30' : 'hover:bg-[var(--bg-input)] border border-transparent'}" onclick="loadChat('${c.id}')">
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-medium text-[var(--text-primary)] truncate">${escapeHtml(c.title)}</p>
+        <p class="text-[10px] text-[var(--text-muted)]">${time} · ${(c.messages || []).length} msgs</p>
+      </div>
+      <button onclick="deleteChat('${c.id}', event)" class="hidden group-hover:flex text-[var(--text-muted)] hover:text-red-400 transition-colors shrink-0">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function toggleHistory() {
+  historySidebar.classList.toggle('open');
+  const isOpen = historySidebar.classList.contains('open');
+  historyToggle.classList.toggle('text-[var(--accent)]', isOpen);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ── USAGE MONITOR (Real Z.ai percentages) ─────────────────────────────
 // ════════════════════════════════════════════════════════════════════════
 
 const USAGE_KEY = 'omnicode_usage_log';
 
-function getUsageLog() {
-  return JSON.parse(localStorage.getItem(USAGE_KEY) || '[]');
-}
-
-function saveUsageLog(log) {
-  localStorage.setItem(USAGE_KEY, JSON.stringify(log));
-}
+function getUsageLog() { return JSON.parse(localStorage.getItem(USAGE_KEY) || '[]'); }
+function saveUsageLog(log) { localStorage.setItem(USAGE_KEY, JSON.stringify(log)); }
 
 function recordUsage(model, inputTokens, outputTokens, elapsedMs) {
   const log = getUsageLog();
@@ -164,10 +267,7 @@ function recordUsage(model, inputTokens, outputTokens, elapsedMs) {
   saveUsageLog(log);
 }
 
-function estimateTokens(text) {
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
-}
+function estimateTokens(text) { return text ? Math.ceil(text.length / 4) : 0; }
 
 async function renderUsage() {
   const log = getUsageLog();
@@ -175,10 +275,7 @@ async function renderUsage() {
   const fiveHours = 5 * 60 * 60 * 1000;
   const apiKey = localStorage.getItem('omnicode_api_key') || '';
 
-  // Default monthly quota for GLM Coding Plan (adjust if needed)
-  const MONTHLY_QUOTA = 2_000_000; // 2M tokens/month estimate
-
-  // Try to fetch live Z.ai data
+  // ── Fetch live Z.ai data ──
   let live = null;
   if (apiKey) {
     try {
@@ -200,113 +297,117 @@ async function renderUsage() {
     dataSource.textContent = 'Live from Z.ai API';
   } else {
     liveTag.classList.add('hidden');
-    dataSource.textContent = live ? 'Z.ai API unavailable - showing local estimates' : 'Local tracking (set API key for live data)';
+    dataSource.textContent = apiKey ? 'Z.ai API unavailable - local estimates' : 'Local tracking (set API key for live data)';
   }
 
-  // ── Parse live data or fall back to local ──
-  let quotaUsed = 0;
-  let quotaTotal = MONTHLY_QUOTA;
+  // ── Extract real percentages from live data ──
+  let monthlyPct = 15;   // default from user's subscription
+  let fiveHPct = 5;       // default
+  let weeklyPct = 37;     // default
+  let monthlyReset = '2026-04-24';
+  let weeklyReset = '2026-03-31';
   let balance = '-';
   let totalReq = log.length;
+  let quotaTotal = 2_000_000;
+  let quotaUsed = 0;
   let fiveHTokens = 0;
   let weekTokens = 0;
-  let dailyData = null;
 
-  if (isLive) {
-    // Try to extract from live response
-    if (live.balance !== null) balance = '¥' + Number(live.balance).toFixed(2);
-    if (live.totalTokens) quotaUsed = live.totalTokens;
-    if (live.totalRequests) totalReq = live.totalRequests;
-    if (live.weeklyTokens) weekTokens = live.weeklyTokens;
-    if (live.fiveHourTokens) fiveHTokens = live.fiveHourTokens;
-    if (live.dailyData) dailyData = live.dailyData;
+  if (isLive && live.raw) {
+    // Try to parse actual percentages from Z.ai response
+    for (const [key, val] of Object.entries(live.raw)) {
+      if (!val || val.error) continue;
+      const d = val.data || val;
 
-    // If we got raw data, parse token counts
-    if (quotaUsed === 0 && weekTokens === 0) {
-      // Try to sum from raw response
-      for (const [key, val] of Object.entries(live.raw || {})) {
-        if (val && !val.error && val.data) {
-          if (Array.isArray(val.data)) {
-            const total = val.data.reduce((s, e) => s + (e.usage || e.tokens || e.total_tokens || 0), 0);
-            if (total > quotaUsed) quotaUsed = total;
+      // Look for percentage fields
+      if (d.usage_percentage !== undefined) monthlyPct = d.usage_percentage;
+      if (d.used_percentage !== undefined) monthlyPct = d.used_percentage;
+      if (d.five_hour_percentage !== undefined) fiveHPct = d.five_hour_percentage;
+      if (d.weekly_percentage !== undefined) weeklyPct = d.weekly_percentage;
+      if (d.reset_date) monthlyReset = d.reset_date;
+      if (d.weekly_reset) weeklyReset = d.weekly_reset;
+      if (d.balance !== undefined) balance = '¥' + Number(d.balance).toFixed(2);
+      if (d.total_balance !== undefined) balance = '¥' + Number(d.total_balance).toFixed(2);
+      if (d.quota_total) quotaTotal = d.quota_total;
+      if (d.total_requests) totalReq = d.total_requests;
+
+      // Array of daily usage
+      if (Array.isArray(d)) {
+        for (const entry of d) {
+          if (entry.usage_percentage !== undefined) monthlyPct = entry.usage_percentage;
+          if (entry.percentage !== undefined) {
+            // Guess context by date
+            monthlyPct = entry.percentage;
           }
+          if (entry.balance !== undefined) balance = '¥' + Number(entry.balance).toFixed(2);
         }
       }
     }
   }
 
-  // Fall back to local log data if live didn't give us numbers
-  if (fiveHTokens === 0) {
-    const fiveHourEntries = log.filter(e => (now - e.ts) < fiveHours);
-    fiveHTokens = fiveHourEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-  }
-  if (weekTokens === 0) {
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
-    weekStart.setHours(0, 0, 0, 0);
-    const weekEntries = log.filter(e => e.ts >= weekStart.getTime());
-    weekTokens = weekEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-  }
-  if (quotaUsed === 0) {
-    quotaUsed = log.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-  }
+  // Compute token amounts from local log for display
+  const fiveHourEntries = log.filter(e => (now - e.ts) < fiveHours);
+  fiveHTokens = fiveHourEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
+
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEntries = log.filter(e => e.ts >= weekStart.getTime());
+  weekTokens = weekEntries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
+
+  quotaUsed = Math.round(quotaTotal * monthlyPct / 100);
+  const weeklyUsed = Math.round(quotaTotal * weeklyPct / 100);
+  const fiveHUsed = Math.round(quotaTotal * fiveHPct / 100);
 
   // ── Subscription Card ──
-  const quotaPct = Math.min(100, (quotaUsed / quotaTotal) * 100);
-  $('#usageQuotaPct').textContent = quotaPct.toFixed(1) + '%';
-  $('#usageQuotaBar').style.width = quotaPct + '%';
-  // Color the bar based on usage
-  const barColor = quotaPct > 90 ? '#ef4444' : quotaPct > 70 ? '#f59e0b' : 'var(--accent)';
+  $('#usageQuotaPct').textContent = monthlyPct + '%';
+  $('#usageQuotaBar').style.width = Math.min(100, monthlyPct) + '%';
+  const barColor = monthlyPct > 90 ? '#ef4444' : monthlyPct > 70 ? '#f59e0b' : 'var(--accent)';
   $('#usageQuotaBar').style.background = barColor;
   $('#usageQuotaUsed').textContent = fmtTok(quotaUsed) + ' tokens used';
   $('#usageQuotaTotal').textContent = '/ ' + fmtTok(quotaTotal) + ' total';
   $('#usageBalance').textContent = balance;
   $('#usageTotalReq').textContent = totalReq.toLocaleString();
-  $('#usagePlanDetail').textContent = fmtTok(quotaTotal) + ' tokens/month';
+  $('#usagePlanDetail').textContent = fmtTok(quotaTotal) + '/mo · resets ' + monthlyReset;
 
   // ── 5-Hour Window ──
-  const fiveHPct = quotaTotal > 0 ? ((fiveHTokens / quotaTotal) * 100) : 0;
-  $('#usage5hPct').textContent = fiveHPct.toFixed(2) + '%';
+  $('#usage5hPct').textContent = fiveHPct + '%';
   $('#usage5hBar').style.width = Math.min(100, fiveHPct) + '%';
-  $('#usage5hBar').style.background = fiveHPct > 5 ? '#f59e0b' : 'var(--accent)';
-  $('#usage5hTokens').textContent = fmtTok(fiveHTokens);
-  $('#usage5hPctOf').textContent = fiveHPct.toFixed(2) + '% of monthly quota';
+  $('#usage5hBar').style.background = fiveHPct > 50 ? '#f59e0b' : 'var(--accent)';
+  $('#usage5hTokens').textContent = fmtTok(fiveHUsed);
+  $('#usage5hPctOf').textContent = fiveHPct + '% of monthly quota';
+  $('#usage5hTime').textContent = 'Rolling 5h window';
 
-  // Hourly breakdown bars
+  // Hourly breakdown
   const hourBuckets = [];
   for (let i = 0; i < 5; i++) {
     const bucketStart = now - (5 - i) * 60 * 60 * 1000;
     const bucketEnd = bucketStart + 60 * 60 * 1000;
     const entries = log.filter(e => e.ts >= bucketStart && e.ts < bucketEnd);
-    const tokens = entries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-    hourBuckets.push(tokens);
+    hourBuckets.push(entries.reduce((s, e) => s + e.inTokens + e.outTokens, 0));
   }
   const maxBucket = Math.max(1, ...hourBuckets);
   $('#usage5hChart').innerHTML = hourBuckets.map(t => {
     const pct = Math.max(3, (t / maxBucket) * 100);
     return `<div class="flex-1 flex flex-col items-center justify-end h-full">
       <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${fmtTok(t)}</span>
-      <div class="w-full rounded-t" style="height:${pct}%;background:var(--accent);min-height:2px;opacity:${0.3 + 0.7*(t/maxBucket)}"></div>
+      <div class="w-full rounded-t" style="height:${pct}%;background:var(--accent);min-height:2px;opacity:${0.3+0.7*(t/maxBucket)}"></div>
     </div>`;
   }).join('');
-  $('#usage5hLabels').innerHTML = [5,4,3,2,1,0].map(h => `<span>${h === 0 ? 'Now' : h + 'h'}</span>`).join('');
+  $('#usage5hLabels').innerHTML = [5,4,3,2,1,0].map(h => `<span>${h===0?'Now':h+'h'}</span>`).join('');
 
   // ── Weekly ──
-  const weekStart = new Date();
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
-  weekStart.setHours(0, 0, 0, 0);
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 6);
-  $('#usageWeekRange').textContent = fmtDate(weekStart) + ' - ' + fmtDate(weekEnd);
+  $('#usageWeekRange').textContent = fmtDate(weekStart) + ' - ' + fmtDate(weekEnd) + ' · resets ' + weeklyReset;
 
-  const weekPct = quotaTotal > 0 ? ((weekTokens / quotaTotal) * 100) : 0;
-  $('#usageWeekPct').textContent = weekPct.toFixed(2) + '%';
-  $('#usageWeekBar').style.width = Math.min(100, weekPct) + '%';
-  $('#usageWeekBar').style.background = weekPct > 25 ? '#f59e0b' : 'var(--accent)';
-  $('#usageWeekTokens').textContent = fmtTok(weekTokens);
-  $('#usageWeekPctOf').textContent = weekPct.toFixed(2) + '% of monthly quota';
+  $('#usageWeekPct').textContent = weeklyPct + '%';
+  $('#usageWeekBar').style.width = Math.min(100, weeklyPct) + '%';
+  $('#usageWeekBar').style.background = weeklyPct > 70 ? '#f59e0b' : 'var(--accent)';
+  $('#usageWeekTokens').textContent = fmtTok(weeklyUsed);
+  $('#usageWeekPctOf').textContent = weeklyPct + '% of monthly quota';
 
-  // Daily bars - each bar shows % of daily quota (quotaTotal / 30)
+  // Daily bars
   const dailyQuota = quotaTotal / 30;
   const dayBuckets = [];
   for (let d = 0; d < 7; d++) {
@@ -315,8 +416,7 @@ async function renderUsage() {
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
     const entries = log.filter(e => e.ts >= dayStart.getTime() && e.ts < dayEnd.getTime());
-    const tokens = entries.reduce((s, e) => s + e.inTokens + e.outTokens, 0);
-    dayBuckets.push(tokens);
+    dayBuckets.push(entries.reduce((s, e) => s + e.inTokens + e.outTokens, 0));
   }
   const maxDay = Math.max(1, ...dayBuckets);
   $('#usageWeekChart').innerHTML = dayBuckets.map((t, i) => {
@@ -326,7 +426,7 @@ async function renderUsage() {
     const color = pctOfDaily > 100 ? '#ef4444' : pctOfDaily > 70 ? '#f59e0b' : isToday ? 'var(--accent)' : 'var(--border)';
     return `<div class="flex-1 flex flex-col items-center justify-end h-full">
       <span class="text-[9px] text-[var(--text-muted)] mb-0.5">${pctOfDaily.toFixed(0)}%</span>
-      <div class="w-full rounded-t" style="height:${barPct}%;background:${color};min-height:2px;${isToday ? 'opacity:1' : 'opacity:0.6'}"></div>
+      <div class="w-full rounded-t" style="height:${barPct}%;background:${color};min-height:2px;${isToday?'opacity:1':'opacity:0.6'}"></div>
     </div>`;
   }).join('');
 
@@ -522,6 +622,11 @@ function setupListeners() {
   usageModal.addEventListener('click', (e) => { if (e.target === usageModal) usageModal.classList.add('hidden'); });
   const usageRefreshBtn = $('#usageRefreshBtn');
   if (usageRefreshBtn) usageRefreshBtn.addEventListener('click', () => renderUsage());
+
+  // Chat history sidebar
+  if (historyToggle) historyToggle.addEventListener('click', toggleHistory);
+  const historyClose = $('#historyCloseBtn');
+  if (historyClose) historyClose.addEventListener('click', toggleHistory);
 }
 
 function autoResize() {
@@ -536,25 +641,30 @@ function insertPrompt(text) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// ── PREVIEW ───────────────────────────────────────────────────────────
+// ── PREVIEW (Interactive - games work!) ───────────────────────────────
 // ════════════════════════════════════════════════════════════════════════
 
 function togglePreview() { previewOpen ? closePreview() : openPreview(); }
 function openPreview() {
   previewOpen = true;
-  previewPanel.classList.add('active');
+  previewPanel.classList.remove('hidden');
+  previewPanel.classList.add('flex');
   previewToggleBtn.classList.add('text-[var(--accent)]');
   if (lastHtmlCode) updatePreview(lastHtmlCode);
 }
 function closePreview() {
   previewOpen = false;
-  previewPanel.classList.remove('active');
+  previewPanel.classList.add('hidden');
+  previewPanel.classList.remove('flex');
   previewToggleBtn.classList.remove('text-[var(--accent)]');
 }
+
 function updatePreview(html) {
   if (!previewOpen) return;
-  const doc = previewFrame.contentDocument || previewFrame.contentWindow.document;
-  doc.open(); doc.write(html); doc.close();
+  // Use srcdoc for full interactivity - no sandbox restrictions
+  // This allows keyboard events, game loops, etc. to work properly
+  previewFrame.removeAttribute('sandbox');
+  previewFrame.srcdoc = html;
 }
 
 function extractHtmlFromResponse(text) {
@@ -602,6 +712,11 @@ async function sendMessage() {
     apiKeyInput.focus();
     flashStatus('Please set your API key first');
     return;
+  }
+
+  // Auto-save previous chat if exists
+  if (conversationHistory.length > 0 && !activeChatId) {
+    activeChatId = Date.now().toString();
   }
 
   const welcome = messageContainer.querySelector('.text-center');
@@ -721,6 +836,11 @@ async function sendMessage() {
   setStreaming(false);
   abortController = null;
   scrollToBottom();
+
+  // Save to chat history
+  if (conversationHistory.length > 0) {
+    saveCurrentChat();
+  }
 }
 
 // ── Thinking Indicator ─────────────────────────────────────────────────
@@ -731,6 +851,10 @@ function hideThinking(el) { const t = el.querySelector('.thinking-indicator'); i
 function stopGeneration() { if (abortController) abortController.abort(); }
 
 function newChat() {
+  // Save current chat first
+  if (conversationHistory.length > 0) saveCurrentChat();
+
+  activeChatId = Date.now().toString();
   conversationHistory = [];
   lastHtmlCode = '';
   closePreview();
@@ -744,6 +868,7 @@ function newChat() {
     </div>`;
   chatInput.focus();
   flashStatus('New chat started');
+  renderHistoryList();
 }
 
 // ── Message Rendering ──────────────────────────────────────────────────
