@@ -62,7 +62,7 @@ function getProviderConfig(modelId, apiKey, apiBase) {
   if (modelId.startsWith("glm")) {
     return {
       apiKey,
-      baseURL: "https://api.z.ai/api/paas/v4",
+      baseURL: "https://api.z.ai/api/coding/paas/v4",
       model: modelId,
     };
   }
