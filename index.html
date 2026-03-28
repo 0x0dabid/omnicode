@@ -24,6 +24,13 @@
       <select id="modelSelect" class="bg-[var(--bg-input)] border border-[var(--border)] text-sm rounded-lg px-3 py-1.5 text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer">
         <option disabled selected>Loading models...</option>
       </select>
+      <!-- Preview toggle -->
+      <button id="previewToggleBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors hidden" title="Toggle Preview">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+        </svg>
+      </button>
       <!-- Theme toggle -->
       <button id="themeBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="Toggle theme">
         <svg id="themeIconDark" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -49,7 +56,7 @@
     </div>
   </header>
 
-  <!-- Settings Panel (hidden by default) -->
+  <!-- Settings Panel -->
   <div id="settingsPanel" class="hidden bg-[var(--bg-secondary)] border-b border-[var(--border)] px-4 py-3 shrink-0">
     <div class="max-w-2xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-3">
       <div>
@@ -76,58 +83,83 @@
     </div>
   </div>
 
-  <!-- Chat Area -->
-  <main id="chatArea" class="flex-1 overflow-y-auto px-4 py-6">
-    <div id="messageContainer" class="max-w-3xl mx-auto space-y-4">
-      <!-- Welcome message -->
-      <div class="text-center py-12">
-        <div class="text-5xl mb-4">&lt;/&gt;</div>
-        <h2 class="text-2xl font-bold text-[var(--text-primary)] mb-2">Welcome to OmniCode</h2>
-        <p class="text-[var(--text-muted)] mb-6">Your multi-LLM coding assistant. Select a model, configure your API key, and start building.</p>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-xl mx-auto text-sm">
-          <button onclick="insertPrompt('Write a Python Flask REST API with CRUD operations')"
-                  class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
-            Write a Flask REST API
-          </button>
-          <button onclick="insertPrompt('Debug this code and explain the fix:')"
-                  class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
-            Debug my code
-          </button>
-          <button onclick="insertPrompt('Explain how async/await works in JavaScript')"
-                  class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
-            Explain a concept
-          </button>
+  <!-- Main Content: Chat + Preview Split -->
+  <div id="mainContent" class="flex-1 flex overflow-hidden">
+    <!-- Chat Panel -->
+    <div id="chatPanel" class="flex-1 flex flex-col overflow-hidden transition-all duration-300">
+      <main id="chatArea" class="flex-1 overflow-y-auto px-4 py-6">
+        <div id="messageContainer" class="max-w-3xl mx-auto space-y-4">
+          <!-- Welcome message -->
+          <div class="text-center py-12">
+            <div class="text-5xl mb-4">&lt;/&gt;</div>
+            <h2 class="text-2xl font-bold text-[var(--text-primary)] mb-2">Welcome to OmniCode</h2>
+            <p class="text-[var(--text-muted)] mb-6">Your multi-LLM coding assistant. Select a model, configure your API key, and start building.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-xl mx-auto text-sm">
+              <button onclick="insertPrompt('Write a simple HTML page with CSS that shows a animated gradient background')"
+                      class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
+                Build a webpage
+              </button>
+              <button onclick="insertPrompt('Debug this code and explain the fix:')"
+                      class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
+                Debug my code
+              </button>
+              <button onclick="insertPrompt('Explain how async/await works in JavaScript')"
+                      class="bg-[var(--bg-input)]/50 border border-[var(--border)] rounded-xl p-3 text-[var(--text-secondary)] hover:border-[var(--accent)]/50 hover:text-[var(--accent)] transition-all">
+                Explain a concept
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  </main>
+      </main>
 
-  <!-- Input Area -->
-  <footer class="shrink-0 bg-[var(--bg-secondary)] border-t border-[var(--border)] px-4 py-3">
-    <div class="max-w-3xl mx-auto">
-      <div class="flex gap-2 items-end">
-        <div class="flex-1 relative">
-          <textarea id="chatInput"
-                    rows="1"
-                    placeholder="Ask me to code anything... (Enter to send, Shift+Enter for newline)"
-                    class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-xl px-4 py-3 pr-12 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)] max-h-40 overflow-y-auto"></textarea>
-          <button id="stopBtn" class="hidden absolute right-2 bottom-2 bg-red-600 hover:bg-red-500 text-white rounded-lg p-1.5 transition-colors" title="Stop generation">
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+      <!-- Input Area -->
+      <footer class="shrink-0 bg-[var(--bg-secondary)] border-t border-[var(--border)] px-4 py-3">
+        <div class="max-w-3xl mx-auto">
+          <div class="flex gap-2 items-end">
+            <div class="flex-1 relative">
+              <textarea id="chatInput"
+                        rows="1"
+                        placeholder="Ask me to code anything... (Enter to send, Shift+Enter for newline)"
+                        class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-xl px-4 py-3 pr-12 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)] max-h-40 overflow-y-auto"></textarea>
+              <button id="stopBtn" class="hidden absolute right-2 bottom-2 bg-red-600 hover:bg-red-500 text-white rounded-lg p-1.5 transition-colors" title="Stop generation">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+              </button>
+            </div>
+            <button id="sendBtn" class="bg-[var(--accent)] hover:opacity-80 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+              </svg>
+              Send
+            </button>
+          </div>
+          <div class="flex justify-between mt-1">
+            <span id="statusText" class="text-xs text-[var(--text-muted)]">Ready</span>
+            <span id="tokenInfo" class="text-xs text-[var(--text-muted)]"></span>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Preview Panel (hidden by default) -->
+    <div id="previewPanel" class="hidden flex-col border-l border-[var(--border)] bg-[var(--bg-primary)]" style="width:50%">
+      <div class="flex items-center justify-between px-3 py-2 bg-[var(--bg-secondary)] border-b border-[var(--border)]">
+        <span class="text-xs font-medium text-[var(--text-muted)]">LIVE PREVIEW</span>
+        <div class="flex items-center gap-2">
+          <button id="previewRefreshBtn" class="text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="Refresh preview">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+          </button>
+          <button id="previewCloseBtn" class="text-[var(--text-muted)] hover:text-red-400 transition-colors" title="Close preview">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
           </button>
         </div>
-        <button id="sendBtn" class="bg-[var(--accent)] hover:opacity-80 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl px-4 py-3 text-sm font-medium transition-colors flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-          </svg>
-          Send
-        </button>
       </div>
-      <div class="flex justify-between mt-1">
-        <span id="statusText" class="text-xs text-[var(--text-muted)]">Ready</span>
-        <span id="tokenInfo" class="text-xs text-[var(--text-muted)]"></span>
-      </div>
+      <iframe id="previewFrame" class="flex-1 w-full bg-white" sandbox="allow-scripts allow-same-origin" title="Live Preview"></iframe>
     </div>
-  </footer>
+  </div>
 
   <script src="/app.js"></script>
 </body>

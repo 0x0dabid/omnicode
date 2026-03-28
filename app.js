@@ -1,6 +1,7 @@
 /**
  * OmniCode — Frontend Application
- * + Typewriter effect for AI responses
+ * + Real-time streaming (SSE) with typewriter
+ * + Live HTML preview panel
  * + Multi-theme support
  */
 
@@ -9,6 +10,9 @@ const THEMES = [
   { id: 'dark',     name: 'Dark',     dot: '#10b981' },
   { id: 'midnight', name: 'Midnight', dot: '#818cf8' },
   { id: 'ocean',    name: 'Ocean',    dot: '#38bdf8' },
+  { id: 'nord',     name: 'Nord',     dot: '#88c0d0' },
+  { id: 'rose',     name: 'Rose',     dot: '#f472b6' },
+  { id: 'light',    name: 'Light',    dot: '#10b981' },
 ];
 
 // ── State ──────────────────────────────────────────────────────────────
@@ -16,29 +20,35 @@ let conversationHistory = [];
 let isStreaming = false;
 let abortController = null;
 let models = [];
-let typewriterTimer = null;
+let previewOpen = false;
+let lastHtmlCode = '';
 
 // ── DOM refs ───────────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
-const modelSelect    = $('#modelSelect');
-const settingsBtn    = $('#settingsBtn');
-const settingsPanel  = $('#settingsPanel');
+const modelSelect     = $('#modelSelect');
+const settingsBtn     = $('#settingsBtn');
+const settingsPanel   = $('#settingsPanel');
 const saveSettingsBtn = $('#saveSettingsBtn');
-const apiKeyInput    = $('#apiKeyInput');
-const apiBaseInput   = $('#apiBaseInput');
-const tempInput      = $('#tempInput');
-const tempValue      = $('#tempValue');
-const chatArea       = $('#chatArea');
+const apiKeyInput     = $('#apiKeyInput');
+const apiBaseInput    = $('#apiBaseInput');
+const tempInput       = $('#tempInput');
+const tempValue       = $('#tempValue');
+const chatArea        = $('#chatArea');
 const messageContainer = $('#messageContainer');
-const chatInput      = $('#chatInput');
-const sendBtn        = $('#sendBtn');
-const stopBtn        = $('#stopBtn');
-const newChatBtn     = $('#newChatBtn');
-const statusText     = $('#statusText');
-const tokenInfo      = $('#tokenInfo');
-const themeBtn       = $('#themeBtn');
-const themeIconDark  = $('#themeIconDark');
-const themeIconLight = $('#themeIconLight');
+const chatInput       = $('#chatInput');
+const sendBtn         = $('#sendBtn');
+const stopBtn         = $('#stopBtn');
+const newChatBtn      = $('#newChatBtn');
+const statusText      = $('#statusText');
+const tokenInfo       = $('#tokenInfo');
+const themeBtn        = $('#themeBtn');
+const themeIconDark   = $('#themeIconDark');
+const themeIconLight  = $('#themeIconLight');
+const previewToggleBtn = $('#previewToggleBtn');
+const previewPanel    = $('#previewPanel');
+const previewFrame    = $('#previewFrame');
+const previewCloseBtn = $('#previewCloseBtn');
+const previewRefreshBtn = $('#previewRefreshBtn');
 
 // ── Initialize ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -58,23 +68,17 @@ function loadTheme() {
 function applyTheme(themeId) {
   document.documentElement.setAttribute('data-theme', themeId);
   localStorage.setItem('omnicode_theme', themeId);
-
-  // Toggle sun/moon icon
-  if (themeId === 'dark' || themeId === 'midnight' || themeId === 'ocean') {
-    themeIconDark.classList.remove('hidden');
-    themeIconLight.classList.add('hidden');
-  }
+  const isDark = ['dark', 'midnight', 'ocean', 'nord', 'rose'].includes(themeId);
+  themeIconDark.classList.toggle('hidden', !isDark);
+  themeIconLight.classList.toggle('hidden', isDark);
 }
 
 function toggleThemeMenu() {
   let menu = document.querySelector('.theme-menu');
   if (menu) { menu.remove(); return; }
-
   menu = document.createElement('div');
   menu.className = 'theme-menu';
-
   const current = localStorage.getItem('omnicode_theme') || 'dark';
-
   THEMES.forEach(t => {
     const btn = document.createElement('button');
     btn.className = t.id === current ? 'active' : '';
@@ -82,7 +86,6 @@ function toggleThemeMenu() {
     btn.onclick = () => { applyTheme(t.id); menu.remove(); };
     menu.appendChild(btn);
   });
-
   themeBtn.style.position = 'relative';
   themeBtn.appendChild(menu);
 }
@@ -93,10 +96,8 @@ async function loadModels() {
     const res = await fetch('/api/models');
     const data = await res.json();
     models = data.models;
-
     modelSelect.innerHTML = '';
     let currentGroup = null;
-
     models.forEach(m => {
       if (!currentGroup || currentGroup.dataset.provider !== m.provider) {
         currentGroup = document.createElement('optgroup');
@@ -110,7 +111,6 @@ async function loadModels() {
       opt.dataset.provider = m.provider;
       currentGroup.appendChild(opt);
     });
-
     const saved = localStorage.getItem('omnicode_model');
     if (saved) modelSelect.value = saved;
   } catch (e) {
@@ -149,6 +149,9 @@ function setupListeners() {
   stopBtn.addEventListener('click', stopGeneration);
   newChatBtn.addEventListener('click', newChat);
   themeBtn.addEventListener('click', toggleThemeMenu);
+  previewToggleBtn.addEventListener('click', togglePreview);
+  previewCloseBtn.addEventListener('click', closePreview);
+  previewRefreshBtn.addEventListener('click', () => updatePreview(lastHtmlCode));
 }
 
 function autoResize() {
@@ -160,6 +163,60 @@ function insertPrompt(text) {
   chatInput.value = text;
   chatInput.focus();
   autoResize();
+}
+
+// ── Preview Panel ──────────────────────────────────────────────────────
+function togglePreview() {
+  if (previewOpen) closePreview();
+  else openPreview();
+}
+
+function openPreview() {
+  previewOpen = true;
+  previewPanel.classList.add('active');
+  previewToggleBtn.classList.add('text-[var(--accent)]');
+  if (lastHtmlCode) updatePreview(lastHtmlCode);
+}
+
+function closePreview() {
+  previewOpen = false;
+  previewPanel.classList.remove('active');
+  previewToggleBtn.classList.remove('text-[var(--accent)]');
+}
+
+function updatePreview(html) {
+  if (!previewOpen) return;
+  const doc = previewFrame.contentDocument || previewFrame.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+}
+
+function extractHtmlFromResponse(text) {
+  // Find HTML code blocks in the response
+  const htmlMatch = text.match(/```html\s*\n([\s\S]*?)```/);
+  const htmMatch = text.match(/```htm\s*\n([\s\S]*?)```/);
+  const match = htmlMatch || htmMatch;
+
+  if (match) {
+    return match[1].trim();
+  }
+
+  // Also check for bare HTML (starts with <!DOCTYPE or <html)
+  const bareMatch = text.match(/((?:<!DOCTYPE|<html)[\s\S]*<\/html>)/i);
+  if (bareMatch) return bareMatch[1].trim();
+
+  return null;
+}
+
+function checkAndShowPreview(fullText) {
+  const html = extractHtmlFromResponse(fullText);
+  if (html) {
+    lastHtmlCode = html;
+    previewToggleBtn.classList.remove('hidden');
+    if (!previewOpen) openPreview();
+    updatePreview(html);
+  }
 }
 
 // ── Chat ───────────────────────────────────────────────────────────────
@@ -184,12 +241,12 @@ async function sendMessage() {
   chatInput.value = '';
   chatInput.style.height = 'auto';
 
+  // Show thinking indicator
   const assistantEl = appendMessage('assistant', '', true);
   const contentEl = assistantEl.querySelector('.markdown-body');
-  contentEl.classList.add('typing-cursor');
+  showThinking(contentEl);
 
   setStreaming(true);
-  statusText.textContent = 'Thinking...';
 
   const model = modelSelect.value;
   const apiBase = apiBaseInput.value.trim() || localStorage.getItem('omnicode_api_base') || null;
@@ -203,37 +260,105 @@ async function sendMessage() {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages: conversationHistory, api_key: apiKey, api_base: apiBase, temperature }),
+      body: JSON.stringify({
+        model,
+        messages: conversationHistory,
+        api_key: apiKey,
+        api_base: apiBase,
+        temperature,
+        stream: true,
+      }),
       signal: abortController.signal,
     });
 
-    const data = await res.json();
+    const contentType = res.headers.get('content-type') || '';
 
-    if (data.error) {
-      contentEl.classList.remove('typing-cursor');
-      contentEl.innerHTML = `<span class="text-red-400">Error: ${escapeHtml(data.error)}</span>`;
-    } else if (data.content) {
-      fullContent = data.content;
-      await typewriterEffect(contentEl, fullContent);
+    // Check if we got streaming (SSE) or JSON fallback
+    if (contentType.includes('text/event-stream')) {
+      // Streaming response
+      hideThinking(contentEl);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let renderTimer = null;
+      let pendingRender = false;
+
+      function scheduleRender() {
+        if (renderTimer) return;
+        renderTimer = setTimeout(() => {
+          renderTimer = null;
+          renderMarkdown(contentEl, fullContent);
+          scrollToBottom();
+          checkAndShowPreview(fullContent);
+        }, 60);
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.error) {
+                hideThinking(contentEl);
+                contentEl.innerHTML = `<span class="text-red-400">Error: ${escapeHtml(parsed.error)}</span>`;
+                break;
+              }
+              if (parsed.content) {
+                fullContent += parsed.content;
+                scheduleRender();
+              }
+            } catch {}
+          }
+        }
+      }
+
+      // Final render
+      if (renderTimer) clearTimeout(renderTimer);
+      if (fullContent) {
+        renderMarkdown(contentEl, fullContent);
+        addCopyButtons(contentEl);
+        scrollToBottom();
+        checkAndShowPreview(fullContent);
+      }
+    } else {
+      // JSON fallback (non-streaming)
+      const data = await res.json();
+      hideThinking(contentEl);
+
+      if (data.error) {
+        contentEl.innerHTML = `<span class="text-red-400">Error: ${escapeHtml(data.error)}</span>`;
+      } else if (data.content) {
+        fullContent = data.content;
+        renderMarkdown(contentEl, fullContent);
+        addCopyButtons(contentEl);
+        scrollToBottom();
+        checkAndShowPreview(fullContent);
+      }
     }
 
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
     tokenInfo.textContent = `${elapsed}s`;
 
   } catch (e) {
+    hideThinking(contentEl);
     if (e.name === 'AbortError') {
       flashStatus('Generation stopped');
     } else {
-      contentEl.classList.remove('typing-cursor');
       contentEl.innerHTML = `<span class="text-red-400">Error: ${escapeHtml(e.message)}</span>`;
     }
   }
 
-  contentEl.classList.remove('typing-cursor');
   if (fullContent) {
     conversationHistory.push({ role: 'assistant', content: fullContent });
-    renderMarkdown(contentEl, fullContent);
-    addCopyButtons(contentEl);
   }
 
   setStreaming(false);
@@ -241,58 +366,25 @@ async function sendMessage() {
   scrollToBottom();
 }
 
-// ── Typewriter Effect ──────────────────────────────────────────────────
-function typewriterEffect(el, text) {
-  return new Promise((resolve) => {
-    const speed = 8; // ms per character — smooth reading pace
-    let i = 0;
-    let buffer = '';
-    let inCodeBlock = false;
-    let tagDepth = 0;
+// ── Thinking Indicator ─────────────────────────────────────────────────
+function showThinking(el) {
+  el.innerHTML = `<span class="thinking-indicator">Thinking<span class="dot"></span><span class="dot"></span><span class="dot"></span></span>`;
+}
 
-    // We'll show raw text progressively, then re-render markdown every few chars
-    let displayed = '';
-    let lastRender = 0;
-    const renderInterval = 50; // re-render markdown every 50ms
-
-    function tick() {
-      if (i >= text.length) {
-        // Final render
-        renderMarkdown(el, text);
-        addCopyButtons(el);
-        scrollToBottom();
-        resolve();
-        return;
-      }
-
-      // Add characters in small chunks for speed
-      const chunkSize = Math.max(1, Math.floor(3 + text.length / 2000));
-      const end = Math.min(i + chunkSize, text.length);
-      displayed = text.slice(0, end);
-      i = end;
-
-      // Re-render markdown periodically
-      const now = performance.now();
-      if (now - lastRender > renderInterval) {
-        renderMarkdown(el, displayed);
-        scrollToBottom();
-        lastRender = now;
-      }
-
-      typewriterTimer = setTimeout(tick, speed);
-    }
-
-    tick();
-  });
+function hideThinking(el) {
+  const thinker = el.querySelector('.thinking-indicator');
+  if (thinker) thinker.remove();
 }
 
 function stopGeneration() {
-  if (typewriterTimer) { clearTimeout(typewriterTimer); typewriterTimer = null; }
   if (abortController) abortController.abort();
 }
 
 function newChat() {
   conversationHistory = [];
+  lastHtmlCode = '';
+  closePreview();
+  previewToggleBtn.classList.add('hidden');
   messageContainer.innerHTML = `
     <div class="text-center py-12">
       <div class="text-5xl mb-4">&lt;/&gt;</div>
@@ -374,7 +466,7 @@ function setStreaming(val) {
   sendBtn.classList.toggle('hidden', val);
   stopBtn.classList.toggle('hidden', !val);
   chatInput.disabled = val;
-  statusText.textContent = val ? 'Typing...' : 'Ready';
+  statusText.textContent = val ? 'Thinking...' : 'Ready';
 }
 
 function flashStatus(msg) {

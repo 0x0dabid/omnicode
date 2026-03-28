@@ -46,10 +46,8 @@ function getProviderConfig(modelId, apiKey, apiBase) {
     };
   }
 
-  // Anthropic — use messages API format but via OpenAI SDK won't work,
-  // so we use a proxy approach or tell user to use OpenRouter
+  // Anthropic
   if (modelId.startsWith("claude")) {
-    // Anthropic has OpenAI-compatible endpoint now
     return {
       apiKey,
       baseURL: "https://api.anthropic.com/v1",
@@ -87,7 +85,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { model: modelId, messages, api_key, api_base, temperature } = req.body;
+  const { model: modelId, messages, api_key, api_base, temperature, stream } = req.body;
 
   if (!api_key) {
     return res.status(400).json({ error: "API key is required" });
@@ -107,6 +105,7 @@ export default async function handler(req, res) {
   try {
     // Anthropic uses a different API format
     if (config.isAnthropic) {
+      // For Anthropic, use non-streaming for simplicity
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -118,11 +117,51 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           model: config.model,
           max_tokens: 4096,
+          stream: stream ? true : false,
           system: SYSTEM_PROMPT,
           messages: messages.map((m) => ({ role: m.role === "system" ? "user" : m.role, content: m.content })),
           temperature: temperature || 0.7,
         }),
       });
+
+      if (stream) {
+        // SSE streaming for Anthropic
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                const data = line.slice(6).trim();
+                if (data === "[DONE]") continue;
+                try {
+                  const parsed = JSON.parse(data);
+                  if (parsed.type === "content_block_delta" && parsed.delta?.text) {
+                    res.write(`data: ${JSON.stringify({ content: parsed.delta.text })}\n\n`);
+                  }
+                } catch {}
+              }
+            }
+          }
+        } catch (e) {
+          // Client disconnected
+        }
+        res.write("data: [DONE]\n\n");
+        return res.end();
+      }
 
       const data = await response.json();
       if (data.error) {
@@ -138,6 +177,38 @@ export default async function handler(req, res) {
       baseURL: config.baseURL,
     });
 
+    // Streaming mode
+    if (stream) {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      try {
+        const response = await openai.chat.completions.create({
+          model: config.model,
+          messages: allMessages,
+          temperature: temperature || 0.7,
+          max_tokens: 4096,
+          stream: true,
+        });
+
+        for await (const chunk of response) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) {
+            res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+          }
+        }
+      } catch (e) {
+        // If streaming fails, try to send error
+        try {
+          res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+        } catch {}
+      }
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    // Non-streaming fallback
     const response = await openai.chat.completions.create({
       model: config.model,
       messages: allMessages,
