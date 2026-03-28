@@ -97,6 +97,10 @@ const repoEditorContent= $('#repoEditorContent');
 const repoEditorSave   = $('#repoEditorSave');
 const repoEditorInject = $('#repoEditorInject');
 const repoCommitMsg    = $('#repoCommitMsg');
+const repoBanner       = $('#repoBanner');
+const repoBannerName   = $('#repoBannerName');
+const repoBannerFiles  = $('#repoBannerFiles');
+const repoBannerClear  = $('#repoBannerClear');
 
 // ── Initialize ─────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -847,6 +851,7 @@ function setupListeners() {
   if (repoBackBtn) repoBackBtn.addEventListener('click', repoGoBack);
   if (repoEditorSave) repoEditorSave.addEventListener('click', commitCurrentFile);
   if (repoEditorInject) repoEditorInject.addEventListener('click', injectFileToChat);
+  if (repoBannerClear) repoBannerClear.addEventListener('click', clearSelectedRepo);
 }
 
 function autoResize() {
@@ -861,16 +866,17 @@ function insertPrompt(text) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// ── GITHUB REPO BROWSER ──────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+// ── GITHUB REPO SELECTOR ─────────────────────────────────────────────
+// Click a repo to select it. Its file tree + key files get injected
+// into every chat message as system context automatically.
 // ════════════════════════════════════════════════════════════════════════
 
 let ghToken = null;
-let repoStack = []; // navigation stack: [{owner, repo, path, branch}]
-let currentFileSha = null;
+let selectedRepo = null; // { owner, repo, branch, files, keyFiles }
 
 function getGhToken() {
   if (ghToken) return ghToken;
-  // Use GitHub token from OAuth login or manually entered PAT
   const stored = localStorage.getItem('omnicode_gh_token');
   if (stored) { ghToken = stored; return stored; }
   return null;
@@ -881,215 +887,102 @@ function setGhToken(t) {
   localStorage.setItem('omnicode_gh_token', t);
 }
 
+function getRepoContext() {
+  if (!selectedRepo) return null;
+  const r = selectedRepo;
+  let ctx = 'You are working on the GitHub repository: ' + r.owner + '/' + r.repo + ' (branch: ' + r.branch + ').\n\n';
+  ctx += '## File Tree (' + r.files.length + ' files)\n';
+  ctx += r.files.map(function(f) { return '- ' + f.path; }).join('\n');
+  ctx += '\n';
+  if (r.keyFiles && Object.keys(r.keyFiles).length > 0) {
+    ctx += '\n## Key File Contents\n';
+    for (const path of Object.keys(r.keyFiles)) {
+      ctx += '\n### ' + path + '\n```\n' + r.keyFiles[path] + '\n```\n';
+    }
+  }
+  ctx += '\nWhen the user asks you to modify or create files, provide the FULL file content with the file path clearly indicated. Use code blocks with the filename as a comment on the first line.';
+  return ctx;
+}
+
 async function loadRepos() {
   const token = getGhToken();
   if (!token) {
-    repoContent.innerHTML = `
-      <div class="px-3 py-4 text-center space-y-3">
-        <p class="text-xs text-[var(--text-muted)]">No GitHub token found. Sign in with GitHub above, or enter a Personal Access Token:</p>
-        <input id="ghTokenInput" type="password" placeholder="ghp_xxxxx..." class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]">
-        <button onclick="connectGithub()" class="w-full bg-[var(--accent)] hover:opacity-80 text-white text-xs px-3 py-2 rounded-lg">Connect</button>
-        <p class="text-[10px] text-[var(--text-muted)]">Needs <code>repo</code> scope. Create at github.com/settings/tokens</p>
-      </div>`;
+    repoContent.innerHTML = '<div class="px-3 py-4 text-center space-y-3">'
+      + '<p class="text-xs text-[var(--text-muted)]">No GitHub token found. Sign in with GitHub, or enter a PAT:</p>'
+      + '<input id="ghTokenInput" type="password" placeholder="ghp_xxxxx..." class="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]">'
+      + '<button onclick="connectGithub()" class="w-full bg-[var(--accent)] hover:opacity-80 text-white text-xs px-3 py-2 rounded-lg">Connect</button>'
+      + '<p class="text-[10px] text-[var(--text-muted)]">Needs <code>repo</code> scope. Create at github.com/settings/tokens</p>'
+      + '</div>';
     return;
   }
   repoContent.innerHTML = '<p class="text-xs text-[var(--text-muted)] text-center py-8">Loading repos...</p>';
   try {
-    const res = await fetch('/api/github/repos', {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+    const res = await fetch('/api/github/repos', { headers: { 'Authorization': 'Bearer ' + token } });
     if (!res.ok) throw new Error('Failed to load repos');
     const repos = await res.json();
-    if (!repos.length) {
-      repoContent.innerHTML = '<p class="text-xs text-[var(--text-muted)] text-center py-8">No repos found</p>';
-      return;
-    }
-    repoPanelTitle.textContent = 'Repos';
-    repoContent.innerHTML = repos.map(r => `
-      <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[var(--bg-input)] cursor-pointer transition-colors group" onclick="browseRepo('${r.full_name}', '${r.default_branch || 'main'}')">
-        <svg class="w-4 h-4 shrink-0 ${r.private ? 'text-yellow-500' : 'text-[var(--text-muted)]'}" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)] transition-colors">${escapeHtml(r.full_name)}</p>
-          <div class="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-            ${r.language ? `<span>${escapeHtml(r.language)}</span>` : ''}
-            ${r.private ? '<span class="text-yellow-500">private</span>' : ''}
-          </div>
-        </div>
-      </div>
-    `).join('');
-  } catch (e) {
-    repoContent.innerHTML = `<p class="text-xs text-red-400 text-center py-8">${escapeHtml(e.message)}</p>`;
-  }
-}
-
-async function browseRepo(fullName, branch) {
-  const [owner, repo] = fullName.split('/');
-  repoStack = [{ owner, repo, path: '', branch }];
-  repoBackBtn.classList.add('hidden');
-  repoBreadcrumb.classList.add('hidden');
-  repoPanelTitle.textContent = fullName;
-  await browsePath('');
-}
-
-async function browsePath(path) {
-  const info = repoStack[repoStack.length - 1];
-  if (!info) return;
-  const token = getGhToken();
-  repoEditor.classList.add('hidden');
-  repoContent.innerHTML = '<p class="text-xs text-[var(--text-muted)] text-center py-8">Loading...</p>';
-
-  // Show breadcrumb
-  if (path) {
-    repoBreadcrumb.classList.remove('hidden');
-    const parts = path.split('/');
-    let crumbs = `<span class="cursor-pointer hover:text-[var(--accent)]" onclick="browsePath('')">root</span>`;
-    let accumulated = '';
-    parts.forEach((p, i) => {
-      accumulated += (i > 0 ? '/' : '') + p;
-      const pth = accumulated;
-      crumbs += ` / <span class="cursor-pointer hover:text-[var(--accent)]" onclick="browsePath('${pth}')">${escapeHtml(p)}</span>`;
-    });
-    repoBreadcrumb.innerHTML = crumbs;
-  } else {
-    repoBreadcrumb.classList.add('hidden');
-  }
-
-  // Back button
-  repoBackBtn.classList.toggle('hidden', repoStack.length <= 1);
-
-  try {
-    const params = new URLSearchParams({ owner: info.owner, repo: info.repo, path, branch: info.branch });
-    const res = await fetch(`/api/github/files?${params}`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error('Failed to browse');
-    const data = await res.json();
-
-    if (data.type === 'file') {
-      // Show file in editor
-      repoContent.innerHTML = '';
-      repoEditor.classList.remove('hidden');
-      repoEditorFile.textContent = data.path;
-      repoEditorContent.value = data.content || '';
-      currentFileSha = data.sha;
-      repoCommitMsg.value = `Update ${data.path}`;
-      return;
-    }
-
-    // Directory listing
-    const dirs = data.files.filter(f => f.type === 'dir').sort((a, b) => a.name.localeCompare(b.name));
-    const files = data.files.filter(f => f.type === 'file').sort((a, b) => a.name.localeCompare(b.name));
-
-    repoContent.innerHTML = [...dirs, ...files].map(f => {
-      const icon = f.type === 'dir' ? `<svg class="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>`
-        : getExtIcon(f.name);
-      const onclick = f.type === 'dir'
-        ? `navToDir('${escapeHtml(f.path)}')`
-        : `openFile('${escapeHtml(f.path)}')`;
-      const size = f.size ? formatBytes(f.size) : '';
-      return `
-        <div class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[var(--bg-input)] cursor-pointer transition-colors" onclick="${onclick}">
-          ${icon}
-          <span class="text-sm text-[var(--text-primary)] flex-1 truncate">${escapeHtml(f.name)}</span>
-          <span class="text-[10px] text-[var(--text-muted)]">${size}</span>
-        </div>`;
+    if (!repos.length) { repoContent.innerHTML = '<p class="text-xs text-[var(--text-muted)] text-center py-8">No repos found</p>'; return; }
+    repoPanelTitle.textContent = 'Select a Repo';
+    repoContent.innerHTML = repos.map(function(r) {
+      var fullName = r.full_name;
+      var isSel = selectedRepo && (selectedRepo.owner + '/' + selectedRepo.repo === fullName);
+      var rowClass = isSel ? 'bg-[var(--accent)]/10 border border-[var(--accent)]/30' : 'hover:bg-[var(--bg-input)] border border-transparent';
+      var langTag = r.language ? '<span>' + escapeHtml(r.language) + '</span>' : '';
+      var privTag = r.private ? '<span class="text-yellow-500">private</span>' : '';
+      var selTag = isSel ? '<span class="text-[var(--accent)]">selected</span>' : '';
+      var checkMark = isSel ? '<span class="text-[var(--accent)] text-lg">&#10003;</span>' : '';
+      return '<div class="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors group ' + rowClass + '" onclick="selectRepo(\'' + fullName + '\', \'' + (r.default_branch || 'main') + '\')">'
+        + '<svg class="w-4 h-4 shrink-0 ' + (r.private ? 'text-yellow-500' : 'text-[var(--text-muted)]') + '" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>'
+        + '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)] transition-colors">' + escapeHtml(fullName) + '</p>'
+        + '<div class="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">' + langTag + privTag + selTag + '</div></div>'
+        + checkMark + '</div>';
     }).join('');
   } catch (e) {
-    repoContent.innerHTML = `<p class="text-xs text-red-400 text-center py-8">${escapeHtml(e.message)}</p>`;
+    repoContent.innerHTML = '<p class="text-xs text-red-400 text-center py-8">' + escapeHtml(e.message) + '</p>';
   }
 }
 
-function navToDir(path) {
-  const info = repoStack[repoStack.length - 1];
-  repoStack.push({ ...info, path });
-  browsePath(path);
-}
-
-function openFile(path) {
-  const info = repoStack[repoStack.length - 1];
-  // Push a new nav entry for the file's directory
-  const dir = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
-  browsePath(path);
-}
-
-function repoGoBack() {
-  if (repoStack.length <= 1) return;
-  repoStack.pop();
-  const info = repoStack[repoStack.length - 1];
-  browsePath(info.path);
-}
-
-async function commitCurrentFile() {
-  const info = repoStack[repoStack.length - 1];
+async function selectRepo(fullName, branch) {
   const token = getGhToken();
-  const path = repoEditorFile.textContent;
-  const content = repoEditorContent.value;
-  const message = repoCommitMsg.value.trim() || `Update ${path}`;
+  const parts = fullName.split('/');
+  const owner = parts[0], repo = parts[1];
 
-  repoEditorSave.textContent = 'Saving...';
-  repoEditorSave.disabled = true;
+  repoPanelTitle.textContent = 'Loading ' + fullName + '...';
+  repoContent.innerHTML = '<div class="flex flex-col items-center justify-center py-12 gap-3"><div class="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin"></div><p class="text-xs text-[var(--text-muted)]">Analyzing repo structure...</p></div>';
 
   try {
-    const res = await fetch('/api/github/commit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({
-        owner: info.owner,
-        repo: info.repo,
-        path,
-        content,
-        message,
-        branch: info.branch,
-        sha: currentFileSha,
-      }),
-    });
+    const params = new URLSearchParams({ owner: owner, repo: repo, branch: branch });
+    const res = await fetch('/api/github/tree?' + params, { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!res.ok) throw new Error('Failed to load repo tree');
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Commit failed');
-    currentFileSha = data.commit;
-    flashStatus('Committed!');
-    repoEditorSave.textContent = 'Commit';
-    repoEditorSave.disabled = false;
+
+    selectedRepo = { owner: owner, repo: repo, branch: branch, files: data.files || [], keyFiles: data.keyFiles || {} };
+
+    // Show banner
+    if (repoBanner) repoBanner.classList.remove('hidden');
+    if (repoBannerName) repoBannerName.textContent = fullName;
+    if (repoBannerFiles) repoBannerFiles.textContent = data.fileCount + ' files';
+
+    loadRepos();
+    flashStatus('Repo selected: ' + fullName + ' (' + data.fileCount + ' files loaded)');
   } catch (e) {
-    alert('Commit failed: ' + e.message);
-    repoEditorSave.textContent = 'Commit';
-    repoEditorSave.disabled = false;
+    repoContent.innerHTML = '<p class="text-xs text-red-400 text-center py-8">' + escapeHtml(e.message) + '</p>';
+    repoPanelTitle.textContent = 'Repos';
   }
 }
 
-function injectFileToChat() {
-  const path = repoEditorFile.textContent;
-  const content = repoEditorContent.value;
-  const ext = path.split('.').pop() || '';
-  const langMap = { js: 'javascript', ts: 'typescript', py: 'python', rb: 'ruby', go: 'go', rs: 'rust', java: 'java', html: 'html', css: 'css', json: 'json', yml: 'yaml', yaml: 'yaml', md: 'markdown', sh: 'bash', sql: 'sql', jsx: 'jsx', tsx: 'tsx', vue: 'html', svelte: 'html' };
-  const lang = langMap[ext] || ext;
-  chatInput.value = `Here's the file \`${path}\` from my repo. I need help with it:\n\n\`\`\`${lang}\n${content}\n\`\`\``;
-  autoResize();
-  chatInput.focus();
-  flashStatus('File loaded into chat');
+function clearSelectedRepo() {
+  selectedRepo = null;
+  if (repoBanner) repoBanner.classList.add('hidden');
+  loadRepos();
+  flashStatus('Repo detached');
 }
 
 function connectGithub() {
-  const input = $('#ghTokenInput');
+  const input = document.getElementById('ghTokenInput');
   if (!input || !input.value.trim()) return;
   setGhToken(input.value.trim());
   loadRepos();
 }
-
-function getExtIcon(name) {
-  const ext = name.split('.').pop().toLowerCase();
-  const colors = { js: '#f7df1e', ts: '#3178c6', py: '#3776ab', html: '#e34f26', css: '#1572b6', json: '#292929', md: '#083fa1', svg: '#ffb13b', png: '#a4c639', jpg: '#a4c639', gif: '#a4c639' };
-  const color = colors[ext] || '#6b7280';
-  return `<svg class="w-4 h-4" style="color:${color}" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"/></svg>`;
-}
-
-function formatBytes(bytes) {
-  if (!bytes) return '';
-  if (bytes < 1024) return bytes + 'B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'K';
-  return (bytes / 1024 / 1024).toFixed(1) + 'M';
-}
-
-// ════════════════════════════════════════════════════════════════════════
 // ── PREVIEW (Interactive - games work!) ───────────────────────────────
 // ════════════════════════════════════════════════════════════════════════
 
@@ -1200,6 +1093,18 @@ async function sendMessage() {
   let messagesToSend = [...conversationHistory];
   if (skillsPrompt) {
     messagesToSend = [{ role: 'system', content: skillsPrompt }, ...messagesToSend];
+  }
+
+  // Inject selected repo context into system prompt
+  const repoCtx = getRepoContext();
+  if (repoCtx) {
+    // Prepend repo context to existing system message or create new one
+    const sysIdx = messagesToSend.findIndex(m => m.role === 'system');
+    if (sysIdx >= 0) {
+      messagesToSend[sysIdx].content = repoCtx + '\n\n' + messagesToSend[sysIdx].content;
+    } else {
+      messagesToSend = [{ role: 'system', content: repoCtx }, ...messagesToSend];
+    }
   }
 
   try {
