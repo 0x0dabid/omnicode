@@ -27,6 +27,8 @@ let models = [];
 let previewOpen = false;
 let lastHtmlCode = '';
 let pendingImages = [];
+let pending3DFiles = [];
+let pendingTextFiles = [];
 let currentUser = null;
 let activeChatId = null;
 
@@ -729,6 +731,7 @@ function toggleThemeMenu() {
 // ════════════════════════════════════════════════════════════════════════
 
 function setupImageHandling() {
+  // Paste support
   chatInput.addEventListener('paste', (e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -736,40 +739,128 @@ function setupImageHandling() {
       if (item.type.startsWith('image/')) {
         e.preventDefault();
         const file = item.getAsFile();
-        if (file) addImage(file);
+        if (file) addFile(file);
         break;
       }
     }
   });
+  // Drag & drop anywhere
   chatInput.addEventListener('drop', (e) => {
     e.preventDefault();
     const files = e.dataTransfer?.files;
-    if (files) { for (const f of files) { if (f.type.startsWith('image/')) addImage(f); } }
+    if (files) { for (const f of files) addFile(f); }
   });
   chatInput.addEventListener('dragover', (e) => e.preventDefault());
+
+  // Also drop on message container
+  messageContainer.addEventListener('dragover', (e) => e.preventDefault());
+  messageContainer.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const files = e.dataTransfer?.files;
+    if (files) { for (const f of files) addFile(f); }
+  });
+
   imageUploadBtn.addEventListener('click', () => imageFileInput.click());
   imageFileInput.addEventListener('change', () => {
-    for (const f of imageFileInput.files) { if (f.type.startsWith('image/')) addImage(f); }
+    for (const f of imageFileInput.files) addFile(f);
     imageFileInput.value = '';
   });
 }
 
-function addImage(file) {
-  const reader = new FileReader();
-  reader.onload = (e) => { pendingImages.push({ dataUrl: e.target.result, file }); renderImagePreviews(); };
-  reader.readAsDataURL(file);
+// Categorize file type
+function getFileCategory(file) {
+  const name = file.name.toLowerCase();
+  const ext = name.split('.').pop();
+  if (file.type.startsWith('image/')) return 'image';
+  if (['glb', 'gltf'].includes(ext)) return '3d';
+  // Text files
+  if (['js','jsx','ts','tsx','py','html','htm','css','scss','less','json','md','txt','yaml','yml',
+       'xml','sql','sh','bash','zsh','c','cpp','h','hpp','java','rb','go','rs','php','vue','svelte',
+       'toml','ini','cfg','conf','env','gitignore','dockerfile','makefile','cmake','gradle',
+       'properties','bat','ps1','lua','r','m','sol','swift','kt','dart','zig','nix'].includes(ext)) return 'text';
+  if (['obj','fbx','stl','dae'].includes(ext)) return '3d';
+  if (file.type.startsWith('text/') || file.type === 'application/json') return 'text';
+  if (file.size < 500000) return 'text'; // Small unknown files try as text
+  return 'binary';
 }
-function removeImage(index) { pendingImages.splice(index, 1); renderImagePreviews(); }
+
+// Add any file type
+function addFile(file) {
+  const cat = getFileCategory(file);
+  if (cat === 'image') {
+    const reader = new FileReader();
+    reader.onload = (e) => { pendingImages.push({ dataUrl: e.target.result, file }); renderImagePreviews(); };
+    reader.readAsDataURL(file);
+  } else if (cat === '3d') {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      pending3DFiles.push({ data: e.target.result, name: file.name, size: file.size, type: cat });
+      renderImagePreviews();
+    };
+    reader.readAsArrayBuffer(file);
+  } else if (cat === 'text') {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      if (text && text.length < 50000) {
+        pendingTextFiles.push({ content: text, name: file.name });
+        renderImagePreviews();
+      } else {
+        flashStatus('File too large to attach: ' + file.name);
+      }
+    };
+    reader.readAsText(file);
+  } else {
+    flashStatus('Cannot attach binary file: ' + file.name);
+  }
+}
+
+function removeImage(index) {
+  // Figure out which array the index falls in
+  const imgCount = pendingImages.length;
+  const tdCount = pending3DFiles.length;
+  if (index < imgCount) {
+    pendingImages.splice(index, 1);
+  } else if (index < imgCount + tdCount) {
+    pending3DFiles.splice(index - imgCount, 1);
+  } else {
+    pendingTextFiles.splice(index - imgCount - tdCount, 1);
+  }
+  renderImagePreviews();
+}
+
 function renderImagePreviews() {
-  if (pendingImages.length === 0) { imagePreviewStrip.classList.add('hidden'); imagePreviewStrip.innerHTML = ''; return; }
+  const total = pendingImages.length + pending3DFiles.length + pendingTextFiles.length;
+  if (total === 0) { imagePreviewStrip.classList.add('hidden'); imagePreviewStrip.innerHTML = ''; return; }
   imagePreviewStrip.classList.remove('hidden');
-  imagePreviewStrip.innerHTML = pendingImages.map((img, i) => `
-    <div class="img-preview-wrap">
-      <img src="${img.dataUrl}" alt="paste">
-      <button class="img-remove" onclick="removeImage(${i})">&times;</button>
-    </div>`).join('');
+  let html = '';
+  let idx = 0;
+  // Images
+  pendingImages.forEach((img) => {
+    html += '<div class="img-preview-wrap"><img src="' + img.dataUrl + '" alt="upload"><button class="img-remove" onclick="removeImage(' + idx + ')">&times;</button></div>';
+    idx++;
+  });
+  // 3D files
+  pending3DFiles.forEach((f) => {
+    html += '<div class="img-preview-wrap" style="min-width:80px;text-align:center;padding:4px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px">'
+      + '<div style="font-size:16px">&#127912;</div>'
+      + '<div style="font-size:10px;color:var(--text-muted);max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + f.name + '</div>'
+      + '<button class="img-remove" onclick="removeImage(' + idx + ')">&times;</button></div>';
+    idx++;
+  });
+  // Text files
+  pendingTextFiles.forEach((f) => {
+    const ext = f.name.split('.').pop();
+    html += '<div class="img-preview-wrap" style="min-width:80px;text-align:center;padding:4px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px">'
+      + '<div style="font-size:10px;font-weight:600;color:var(--accent)">' + ext.toUpperCase() + '</div>'
+      + '<div style="font-size:10px;color:var(--text-muted);max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + f.name + '</div>'
+      + '<button class="img-remove" onclick="removeImage(' + idx + ')">&times;</button></div>';
+    idx++;
+  });
+  imagePreviewStrip.innerHTML = html;
 }
-function clearPendingImages() { pendingImages = []; renderImagePreviews(); }
+
+function clearPendingImages() { pendingImages = []; pending3DFiles = []; pendingTextFiles = []; renderImagePreviews(); }
 
 // ════════════════════════════════════════════════════════════════════════
 // ── MODELS & SETTINGS ─────────────────────────────────────────────────
@@ -1054,6 +1145,95 @@ function updatePreview(html) {
   previewFrame.srcdoc = html;
 }
 
+// ── 3D GLB/GLTF Viewer ────────────────────────────────────────────────
+
+function open3DViewer(arrayBuffer, fileName) {
+  previewPanel.classList.remove('hidden');
+  previewPanel.classList.add('flex');
+  previewToggleBtn.classList.remove('hidden');
+  previewToggleBtn.classList.add('text-[var(--accent)]');
+  previewOpen = true;
+  previewFrame.style.display = 'none';
+
+  var container = document.getElementById('viewer3d-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'viewer3d-container';
+    container.style.cssText = 'flex:1;width:100%;position:relative;background:#1a1a2e;';
+    previewPanel.appendChild(container);
+  }
+  container.style.display = 'block';
+  previewFileName.textContent = fileName || '3D Model';
+  previewFileName.classList.remove('hidden');
+
+  var blob = new Blob([arrayBuffer], { type: 'application/octet-stream' });
+  var modelUrl = URL.createObjectURL(blob);
+  container.dataset.modelUrl = modelUrl;
+
+  var iframe = document.createElement('iframe');
+  iframe.style.cssText = 'width:100%;height:100%;border:none;background:#1a1a2e;';
+  var html = build3DViewerHtml(modelUrl);
+  iframe.srcdoc = html;
+  container.innerHTML = '';
+  container.appendChild(iframe);
+}
+
+function build3DViewerHtml(modelUrl) {
+  return '<!DOCTYPE html><html><head><style>*{margin:0;padding:0}body{overflow:hidden;background:#1a1a2e}#loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;font-family:monospace;font-size:14px}</style></head><body><div id="loading">Loading 3D model...</div>'
+    + '<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.164.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.164.0/examples/jsm/"}}</' + 'script>'
+    + '<script type="module">'
+    + 'import * as THREE from "three";'
+    + 'import {OrbitControls} from "three/addons/controls/OrbitControls.js";'
+    + 'import {GLTFLoader} from "three/addons/loaders/GLTFLoader.js";'
+    + 'import {DRACOLoader} from "three/addons/loaders/DRACOLoader.js";'
+    + 'var scene=new THREE.Scene();scene.background=new THREE.Color(0x1a1a2e);'
+    + 'scene.add(new THREE.AmbientLight(0xffffff,0.6));'
+    + 'var dirLight=new THREE.DirectionalLight(0xffffff,1.2);dirLight.position.set(5,10,7);scene.add(dirLight);'
+    + 'var dirLight2=new THREE.DirectionalLight(0xffffff,0.4);dirLight2.position.set(-5,-3,-5);scene.add(dirLight2);'
+    + 'var hemiLight=new THREE.HemisphereLight(0xffffff,0x444444,0.3);scene.add(hemiLight);'
+    + 'var camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.01,1000);camera.position.set(3,2,5);'
+    + 'var renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(window.innerWidth,window.innerHeight);renderer.setPixelRatio(window.devicePixelRatio);renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;renderer.outputColorSpace=THREE.SRGBColorSpace;document.body.appendChild(renderer.domElement);'
+    + 'var controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.08;controls.autoRotate=true;controls.autoRotateSpeed=1.5;'
+    + 'var loader=new GLTFLoader();'
+    + 'var dracoLoader=new DRACOLoader();dracoLoader.setDecoderPath("https://unpkg.com/three@0.164.0/examples/jsm/libs/draco/");loader.setDRACOLoader(dracoLoader);'
+    + 'var mixer=null;var clock=new THREE.Clock();'
+    + 'loader.load("' + modelUrl + '",function(gltf){'
+    + '  document.getElementById("loading").style.display="none";'
+    + '  var model=gltf.scene;'
+    + '  var box=new THREE.Box3().setFromObject(model);'
+    + '  var center=box.getCenter(new THREE.Vector3());'
+    + '  var size=box.getSize(new THREE.Vector3());'
+    + '  var maxDim=Math.max(size.x,size.y,size.z);'
+    + '  var scale=3/maxDim;'
+    + '  model.scale.multiplyScalar(scale);'
+    + '  model.position.sub(center.multiplyScalar(scale));'
+    + '  scene.add(model);'
+    + '  camera.position.set(scale*3,scale*2,scale*5);'
+    + '  controls.target.set(0,0,0);controls.update();'
+    + '  if(gltf.animations&&gltf.animations.length>0){mixer=new THREE.AnimationMixer(model);gltf.animations.forEach(function(clip){mixer.clipAction(clip).play();});}'
+    + '},undefined,function(e){document.getElementById("loading").textContent="Error: "+e.message;});'
+    + 'function animate(){requestAnimationFrame(animate);if(mixer)mixer.update(clock.getDelta());controls.update();renderer.render(scene,camera);}animate();'
+    + 'window.addEventListener("resize",function(){camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);});'
+    + '</' + 'script></body></html>';
+}
+
+function close3DViewer() {
+  var container = document.getElementById('viewer3d-container');
+  if (container) {
+    var url = container.dataset.modelUrl;
+    if (url) URL.revokeObjectURL(url);
+    container.style.display = 'none';
+  }
+  previewFrame.style.display = '';
+}
+
+// Patch closePreview to also close 3D
+var _origClosePreview = closePreview;
+closePreview = function() {
+  close3DViewer();
+  _origClosePreview();
+};
+
 function extractHtmlFromResponse(text) {
   const htmlMatch = text.match(/```html\s*\n([\s\S]*?)```/);
   if (htmlMatch) return htmlMatch[1].trim();
@@ -1096,7 +1276,7 @@ function checkAndShowPreview(fullText) {
 
 async function sendMessage() {
   const text = chatInput.value.trim();
-  if ((!text && pendingImages.length === 0) || isStreaming) return;
+  if ((!text && pendingImages.length === 0 && pending3DFiles.length === 0 && pendingTextFiles.length === 0) || isStreaming) return;
 
   const apiKey = apiKeyInput.value.trim() || localStorage.getItem('omnicode_api_key');
   if (!apiKey) {
@@ -1115,9 +1295,29 @@ async function sendMessage() {
   if (welcome) welcome.remove();
 
   const imageUrls = pendingImages.map(img => img.dataUrl);
-  const userMsg = { role: 'user', content: text || '(image)', images: imageUrls };
+
+  // Auto-open 3D viewer for uploaded GLB files
+  if (pending3DFiles.length > 0) {
+    for (const f of pending3DFiles) {
+      open3DViewer(f.data, f.name);
+    }
+  }
+
+  // Build full message text including text file contents
+  let fullText = text || '';
+  if (pendingTextFiles.length > 0) {
+    fullText += '\n\nAttached files:\n';
+    for (const f of pendingTextFiles) {
+      fullText += '--- ' + f.name + ' ---\n' + f.content + '\n\n';
+    }
+  }
+  if (pending3DFiles.length > 0 && !fullText) {
+    fullText = 'I uploaded a 3D model. Please analyze it and describe what you see.';
+  }
+
+  const userMsg = { role: 'user', content: fullText || '(file)', images: imageUrls };
   conversationHistory.push(userMsg);
-  appendMessage('user', text, imageUrls);
+  appendMessage('user', fullText, imageUrls);
 
   chatInput.value = '';
   chatInput.style.height = 'auto';
