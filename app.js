@@ -1073,15 +1073,20 @@ function extractFilesFromResponse(text) {
 }
 
 function checkAndShowPreview(fullText) {
-  const html = extractHtmlFromResponse(fullText);
-  if (html) {
-    lastHtmlCode = html;
-    previewToggleBtn.classList.remove('hidden');
-    if (!previewOpen) openPreview();
-    updatePreview(html);
-    const files = extractFilesFromResponse(fullText);
-    const htmlFile = files.find(f => f.filename && /\.(html|htm)$/i.test(f.filename));
-    if (htmlFile) { previewFileName.textContent = htmlFile.filename; previewFileName.classList.remove('hidden'); }
+  try {
+    const html = extractHtmlFromResponse(fullText);
+    console.log('[Preview] extracted html:', html ? html.length + ' chars' : 'null');
+    if (html) {
+      lastHtmlCode = html;
+      previewToggleBtn.classList.remove('hidden');
+      if (!previewOpen) openPreview();
+      updatePreview(html);
+      const files = extractFilesFromResponse(fullText);
+      const htmlFile = files.find(f => f.filename && /\.(html|htm)$/i.test(f.filename));
+      if (htmlFile) { previewFileName.textContent = htmlFile.filename; previewFileName.classList.remove('hidden'); }
+    }
+  } catch (e) {
+    console.error('[Preview] error:', e);
   }
 }
 
