@@ -849,8 +849,8 @@ function setupListeners() {
   });
   if (repoCloseBtn) repoCloseBtn.addEventListener('click', () => repoPanel.classList.add('hidden'));
   // repoGoBack removed - no file browsing in new repo system
-  if (repoEditorSave) repoEditorSave.addEventListener('click', commitCurrentFile);
-  if (repoEditorInject) repoEditorInject.addEventListener('click', injectFileToChat);
+  // commitCurrentFile removed - old repo browser
+  // injectFileToChat removed - old repo browser
   if (repoBannerClear) repoBannerClear.addEventListener('click', clearSelectedRepo);
 }
 
