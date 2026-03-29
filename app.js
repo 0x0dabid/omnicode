@@ -74,9 +74,9 @@ const userDropdown     = $('#userDropdown');
 const logoutBtn        = $('#logoutBtn');
 const authError        = $('#authError');
 // Usage
-const usageBtn         = $('#usageBtn');
-const usageModal       = $('#usageModal');
-const usageCloseBtn    = $('#usageCloseBtn');
+const usageBtn         = null;
+const usageModal       = null;
+const usageCloseBtn    = null;
 // Skills
 const skillsBtn        = $('#skillsBtn');
 const skillsModal      = $('#skillsModal');
@@ -436,7 +436,6 @@ function loadChat(chatId) {
     }
   });
   if (lastHtmlCode) {
-    previewToggleBtn.classList.remove('hidden');
     if (previewOpen) updatePreview(lastHtmlCode);
   }
   renderHistoryList();
@@ -940,9 +939,7 @@ function setupListeners() {
   });
 
   // Usage modal
-  usageBtn.addEventListener('click', () => { renderUsage(); usageModal.classList.remove('hidden'); });
-  usageCloseBtn.addEventListener('click', () => usageModal.classList.add('hidden'));
-  usageModal.addEventListener('click', (e) => { if (e.target === usageModal) usageModal.classList.add('hidden'); });
+  // Usage modal removed
   const usageRefreshBtn = $('#usageRefreshBtn');
   if (usageRefreshBtn) usageRefreshBtn.addEventListener('click', () => renderUsage());
 
@@ -1135,6 +1132,7 @@ function closePreview() {
   previewPanel.classList.add('hidden');
   previewPanel.classList.remove('flex');
   previewToggleBtn.classList.remove('text-[var(--accent)]');
+  previewFileName.classList.add('hidden');
 }
 
 function updatePreview(html) {
@@ -1258,7 +1256,6 @@ function checkAndShowPreview(fullText) {
     console.log('[Preview] extracted html:', html ? html.length + ' chars' : 'null');
     if (html) {
       lastHtmlCode = html;
-      previewToggleBtn.classList.remove('hidden');
       if (!previewOpen) openPreview();
       updatePreview(html);
       const files = extractFilesFromResponse(fullText);
@@ -1541,7 +1538,6 @@ function newChat() {
   conversationHistory = [];
   lastHtmlCode = '';
   closePreview();
-  previewToggleBtn.classList.add('hidden');
   previewFileName.classList.add('hidden');
   messageContainer.innerHTML = `
     <div class="text-center py-12">
