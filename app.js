@@ -1271,12 +1271,49 @@ function checkAndShowPreview(fullText) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// ── Auto-Continue Detection ─────────────────────────────────────────
+function shouldAutoContinue(text) {
+  if (!text || text.length < 100) return false;
+
+  // Count code block markers
+  const codeBlockMarkers = (text.match(/```/g) || []).length;
+  // Odd number = unclosed code block
+  if (codeBlockMarkers % 2 !== 0) return 'codeblock';
+
+  // Check if ends mid-sentence (no proper ending punctuation)
+  const trimmed = text.trimEnd();
+  const lastChar = trimmed.slice(-1);
+  const goodEndings = ['.', '!', '?', '`', ')', ']', '}', '>', '\n'];
+  const badEndings = [',', ';', '{', '(', '[', '-', '='];
+  // If ends with a bad character, likely cut off
+  if (badEndings.includes(lastChar)) return 'midcode';
+
+  // Check for common truncation patterns
+  const truncationSigns = [
+    /function\s+\w+\s*\([^)]*\)\s*\{?\s*$/,
+    /const\s+\w+\s*=\s*$/,
+    /class\s+\w+.*\{?\s*$/,
+    /import\s+.*from\s*$/,
+    /return\s*$/,
+    /\bif\s*\(.*\)\s*\{?\s*$/,
+    /<\/\w*>?\s*$/,  // mid-HTML tag
+  ];
+  for (const pattern of truncationSigns) {
+    const lastLine = trimmed.split('\n').pop().trim();
+    if (pattern.test(lastLine)) return 'midcode';
+  }
+
+  return false;
+}
+
 // ── CHAT ──────────────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════
 
 async function sendMessage() {
   const text = chatInput.value.trim();
   if ((!text && pendingImages.length === 0 && pending3DFiles.length === 0 && pendingTextFiles.length === 0) || isStreaming) return;
+  // Reset auto-continue counter on new user message
+  window._autoContinueCount = 0;
 
   const apiKey = apiKeyInput.value.trim() || localStorage.getItem('omnicode_api_key');
   if (!apiKey) {
@@ -1414,12 +1451,9 @@ async function sendMessage() {
                 break;
               }
               if (parsed.content) { fullContent += parsed.content; scheduleRender(); }
-              if (parsed.truncated) {
-                console.log('[Stream] Response truncated, auto-continuing...');
-                fullContent += '\n\n[Auto-continuing...]\n\n';
-                scheduleRender();
-                // Will be handled after stream ends
-                window._truncatedFlag = true;
+              // Backend signals truncation - note it but content-based detection handles it
+              if (parsed.truncated || parsed.finish_reason === 'length') {
+                console.log('[Stream] Backend reports truncation, will auto-continue if content looks incomplete');
               }
             } catch {}
           }
@@ -1466,11 +1500,13 @@ async function sendMessage() {
   abortController = null;
   scrollToBottom();
 
-  // Auto-continue if response looks incomplete
+  // Auto-continue if response looks incomplete (max 5 continues per conversation turn)
   if (fullContent) {
+    window._autoContinueCount = (window._autoContinueCount || 0);
     const shouldContinue = shouldAutoContinue(fullContent);
-    if (shouldContinue) {
-      console.log('[AutoContinue] Response appears incomplete, auto-continuing...');
+    if (shouldContinue && window._autoContinueCount < 5) {
+      window._autoContinueCount++;
+      console.log('[AutoContinue] #' + window._autoContinueCount + ' - response incomplete, continuing...');
       const continueMsg = shouldContinue === 'codeblock'
         ? 'Continue from where you left off. Do not repeat any code already written - just continue with the rest of the file.'
         : 'Continue. Provide the rest of the response without repeating what was already written.';
@@ -1478,6 +1514,9 @@ async function sendMessage() {
         chatInput.value = continueMsg;
         sendMessage();
       }, 1500);
+    } else if (!shouldContinue) {
+      // Reset counter when response is complete
+      window._autoContinueCount = 0;
     }
   }
 
