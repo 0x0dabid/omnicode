@@ -900,7 +900,22 @@ function getRepoContext() {
       ctx += '\n### ' + path + '\n```\n' + r.keyFiles[path] + '\n```\n';
     }
   }
-  ctx += '\nWhen the user asks you to modify or create files, provide the FULL file content with the file path clearly indicated. Use code blocks with the filename as a comment on the first line.';
+  ctx += '\n\n## Commit Tool\n';
+  ctx += 'You have the ability to directly commit files to this repository. When the user asks you to commit, push, publish, save, or apply changes:\n';
+  ctx += '1. Output a commit block using this EXACT format (must be on its own line):\n';
+  ctx += '   <!-- COMMIT_START -->\n';
+  ctx += '   <!-- FILE: path/to/file.js -->\n';
+  ctx += '   full file content here\n';
+  ctx += '   <!-- FILE: path/to/another.html -->\n';
+  ctx += '   full file content here\n';
+  ctx += '   <!-- MSG: your commit message here -->\n';
+  ctx += '   <!-- COMMIT_END -->\n';
+  ctx += '2. You can include multiple FILE entries in one commit block.\n';
+  ctx += '3. The MSG line is the commit message.\n';
+  ctx += '4. After the commit block, briefly confirm what was committed.\n';
+  ctx += '5. Always provide FULL file contents, never partial.\n';
+  ctx += '6. You can also just provide code normally. Only use the commit block when the user explicitly asks to commit/push/save.\n';
+  ctx += '\nWhen the user asks you to modify or create files (without asking to commit), provide the FULL file content with the file path clearly indicated. Use code blocks with the filename as a comment on the first line.';
   return ctx;
 }
 
@@ -1174,6 +1189,7 @@ async function sendMessage() {
         addCopyButtons(contentEl);
         scrollToBottom();
         checkAndShowPreview(fullContent);
+        scanAndExecuteCommits(fullContent, contentEl);
       }
     } else {
       const data = await res.json();
@@ -1186,6 +1202,7 @@ async function sendMessage() {
         addCopyButtons(contentEl);
         scrollToBottom();
         checkAndShowPreview(fullContent);
+        scanAndExecuteCommits(fullContent, contentEl);
       }
     }
 
@@ -1278,6 +1295,89 @@ function addCopyButtons(container) {
     pre.appendChild(btn);
   });
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// ── AUTO COMMIT ─────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+
+async function scanAndExecuteCommits(fullContent, contentEl) {
+  if (!selectedRepo || !fullContent) return;
+  const token = getGhToken();
+  if (!token) return;
+
+  // Find all commit blocks: <!-- COMMIT_START --> ... <!-- COMMIT_END -->
+  const commitRegex = /<!-- COMMIT_START -->([\s\S]*?)<!-- COMMIT_END -->/g;
+  let match;
+  const results = [];
+
+  while ((match = commitRegex.exec(fullContent)) !== null) {
+    const block = match[1];
+    // Extract files: <!-- FILE: path --> content (until next FILE or MSG)
+    const fileRegex = /<!-- FILE:\s*(.+?)\s*-->\n([\s\S]*?)(?=<!-- FILE:|<!-- MSG:|<!-- COMMIT_END|$)/g;
+    const files = [];
+    let fm;
+    while ((fm = fileRegex.exec(block)) !== null) {
+      files.push({ path: fm[1].trim(), content: fm[2].trimEnd() });
+    }
+
+    // Extract commit message
+    const msgMatch = block.match(/<!-- MSG:\s*(.+?)\s*-->/);
+    const message = msgMatch ? msgMatch[1].trim() : 'Update files via OmniCode';
+
+    if (files.length > 0) {
+      results.push({ message, files });
+    }
+  }
+
+  if (results.length === 0) return;
+
+  // Execute commits
+  const owner = selectedRepo.owner;
+  const repo = selectedRepo.repo;
+  const branch = selectedRepo.branch;
+
+  for (const commit of results) {
+    for (const file of commit.files) {
+      try {
+        // Get existing file SHA if it exists
+        let sha = null;
+        const checkRes = await fetch('/api/github/files?owner=' + owner + '&repo=' + repo + '&path=' + encodeURIComponent(file.path) + '&branch=' + branch, {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (checkRes.ok) {
+          const fd = await checkRes.json();
+          if (fd.sha) sha = fd.sha;
+        }
+
+        const res = await fetch('/api/github/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ owner, repo, path: file.path, content: file.content, message: commit.message, branch, sha })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          flashStatus('Committed: ' + file.path);
+        } else {
+          flashStatus('Commit failed: ' + (data.error || 'unknown'));
+        }
+      } catch (e) {
+        flashStatus('Commit error: ' + e.message);
+      }
+    }
+  }
+
+  // Show commit summary in chat
+  const totalFiles = results.reduce((s, c) => s + c.files.length, 0);
+  const summary = document.createElement('div');
+  summary.className = 'flex items-center gap-2 px-4 py-2 mt-2 rounded-lg text-xs font-medium';
+  summary.style.cssText = 'background:rgba(35,134,54,0.15);color:#3fb950;border:1px solid rgba(35,134,54,0.3)';
+  summary.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H1.5a.5.5 0 0 1 0-1h2.57a4.002 4.002 0 0 1 7.86 0h2.57a.5.5 0 0 1 0 1Zm-1.43-.5a3.001 3.001 0 1 0-5.002 0 3.001 3.001 0 0 0 5.002 0Z"/></svg> '
+    + totalFiles + ' file(s) committed to ' + owner + '/' + repo + ' (branch: ' + branch + ')';
+  contentEl.appendChild(summary);
+  scrollToBottom();
+}
+
 
 // ── Helpers ────────────────────────────────────────────────────────────
 function escapeHtml(text) { const d = document.createElement('div'); d.textContent = text; return d.innerHTML; }
