@@ -241,6 +241,24 @@ const BUILT_IN_SKILLS = [
     active: false,
     builtin: true,
   },
+  {
+    id: 'builtin-threejs',
+    name: 'Three.js Expert',
+    desc: '3D graphics with Three.js & WebGL',
+    icon: '🌍',
+    content: 'You are a Three.js expert. Build 3D web applications using Three.js (use ES module imports from https://unpkg.com/three@latest/build/three.module.js). Always include: proper scene setup (Scene, Camera, Renderer), lighting (ambient + directional/point), geometry with appropriate materials (MeshStandardMaterial, MeshPhysicalMaterial), animation loop with requestAnimationFrame, OrbitControls for interactivity (from https://unpkg.com/three@latest/examples/jsm/controls/OrbitControls.js), responsive canvas (window resize handler), and performance optimizations (object pooling, instancing for repeated geometry). Use modern Three.js patterns: BufferGeometry, node-based materials when appropriate. Output complete, runnable HTML files.',
+    active: false,
+    builtin: true,
+  },
+  {
+    id: 'builtin-webgl',
+    name: 'WebGL Renderer',
+    desc: 'Low-level WebGL & GLSL shaders',
+    icon: '✨',
+    content: 'You are a WebGL and shader expert. Write raw WebGL2 code with custom GLSL shaders. Always include: proper WebGL2 context setup (canvas.getContext("webgl2")), vertex and fragment shaders with precision qualifiers, buffer creation and attribute pointers, uniform management, texture loading and sampling, proper error checking for shader compilation and program linking, and cleanup. Know GLSL ES 3.00 features: inout qualifiers, texture() over texture2D(), integer attributes. For visual effects use: post-processing pipelines, framebuffer objects (FBO), multiple render passes, noise functions (Simplex, Perlin), ray marching for SDFs. Output complete, runnable HTML files with embedded shaders.',
+    active: false,
+    builtin: true,
+  },
 ];
 
 function getAllSkills() {
@@ -249,6 +267,18 @@ function getAllSkills() {
     // First run -- save built-in skills
     localStorage.setItem(SKILLS_KEY, JSON.stringify(BUILT_IN_SKILLS));
     return [...BUILT_IN_SKILLS];
+  }
+  // Migration: add new built-in skills that don't exist in saved data
+  const savedIds = new Set(saved.map(function(s) { return s.id; }));
+  let changed = false;
+  for (const bs of BUILT_IN_SKILLS) {
+    if (!savedIds.has(bs.id)) {
+      saved.push(bs);
+      changed = true;
+    }
+  }
+  if (changed) {
+    localStorage.setItem(SKILLS_KEY, JSON.stringify(saved));
   }
   return saved;
 }
