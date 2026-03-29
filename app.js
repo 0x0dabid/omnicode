@@ -1466,22 +1466,18 @@ async function sendMessage() {
   abortController = null;
   scrollToBottom();
 
-  // Auto-continue if response was truncated (hit max_tokens)
-  if (window._truncatedFlag && fullContent) {
-    window._truncatedFlag = false;
-    // Check if there are unclosed code blocks
-    const openBlocks = (fullContent.match(/```/g) || []).length;
-    if (openBlocks % 2 !== 0) {
-      // Unclosed code block - auto continue
+  // Auto-continue if response looks incomplete
+  if (fullContent) {
+    const shouldContinue = shouldAutoContinue(fullContent);
+    if (shouldContinue) {
+      console.log('[AutoContinue] Response appears incomplete, auto-continuing...');
+      const continueMsg = shouldContinue === 'codeblock'
+        ? 'Continue from where you left off. Do not repeat any code already written - just continue with the rest of the file.'
+        : 'Continue. Provide the rest of the response without repeating what was already written.';
       setTimeout(() => {
-        chatInput.value = 'Continue from where you left off. Do not repeat any code already written, just continue with the rest.';
+        chatInput.value = continueMsg;
         sendMessage();
-      }, 1000);
-    } else {
-      setTimeout(() => {
-        chatInput.value = 'Continue. Is there more code? Provide the rest without repeating what was already written.';
-        sendMessage();
-      }, 1000);
+      }, 1500);
     }
   }
 

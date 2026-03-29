@@ -125,9 +125,8 @@ export default async function handler(req, res) {
             if (delta) {
               res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
             }
-            if (finishReason === 'length') {
-              // Signal to frontend that response was truncated
-              res.write(`data: ${JSON.stringify({ truncated: true })}\n\n`);
+            if (finishReason) {
+              res.write(`data: ${JSON.stringify({ finish_reason: finishReason })}\n\n`);
             }
           }
         });
