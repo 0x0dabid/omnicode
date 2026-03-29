@@ -115,14 +115,19 @@ export default async function handler(req, res) {
             model: config.model,
             messages: allMessages,
             temperature: temperature || 0.7,
-            max_tokens: 16384,
+            max_tokens: 32768,
             stream: true,
           });
 
           for await (const chunk of response) {
             const delta = chunk.choices[0]?.delta?.content;
+            const finishReason = chunk.choices[0]?.finish_reason;
             if (delta) {
               res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+            }
+            if (finishReason === 'length') {
+              // Signal to frontend that response was truncated
+              res.write(`data: ${JSON.stringify({ truncated: true })}\n\n`);
             }
           }
         });
@@ -139,7 +144,7 @@ export default async function handler(req, res) {
         model: config.model,
         messages: allMessages,
         temperature: temperature || 0.7,
-        max_tokens: 16384,
+        max_tokens: 32768,
       })
     );
     return res.status(200).json({ content: response.choices[0]?.message?.content || "" });

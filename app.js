@@ -1214,6 +1214,13 @@ async function sendMessage() {
                 break;
               }
               if (parsed.content) { fullContent += parsed.content; scheduleRender(); }
+              if (parsed.truncated) {
+                console.log('[Stream] Response truncated, auto-continuing...');
+                fullContent += '\n\n[Auto-continuing...]\n\n';
+                scheduleRender();
+                // Will be handled after stream ends
+                window._truncatedFlag = true;
+              }
             } catch {}
           }
         }
@@ -1258,6 +1265,25 @@ async function sendMessage() {
   setStreaming(false);
   abortController = null;
   scrollToBottom();
+
+  // Auto-continue if response was truncated (hit max_tokens)
+  if (window._truncatedFlag && fullContent) {
+    window._truncatedFlag = false;
+    // Check if there are unclosed code blocks
+    const openBlocks = (fullContent.match(/```/g) || []).length;
+    if (openBlocks % 2 !== 0) {
+      // Unclosed code block - auto continue
+      setTimeout(() => {
+        chatInput.value = 'Continue from where you left off. Do not repeat any code already written, just continue with the rest.';
+        sendMessage();
+      }, 1000);
+    } else {
+      setTimeout(() => {
+        chatInput.value = 'Continue. Is there more code? Provide the rest without repeating what was already written.';
+        sendMessage();
+      }, 1000);
+    }
+  }
 
   // Save to chat history
   if (conversationHistory.length > 0) {
